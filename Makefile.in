@@ -1,0 +1,48 @@
+# Makefile.in for kernel module
+
+SHELL = /bin/sh
+INSTALL = @INSTALL@
+mkdir_p = mkdir -p
+VERSION = @PACKAGE_VERSION@
+
+DISTFILES = Makefile.in configure.ac configure install-sh \
+	libxio.h 		\
+	src/raio_kutils.h 	\
+	src/raio_kbuffer.h 	\
+	src/raio_kutils.c	\
+	src/xnbd.c
+
+xnbdmoduledir = @kmoduledir@/xnbd
+xnbdmodule := xnbd.ko
+xnbdsrc := src
+
+
+all: all-spec
+
+install: all
+	$(mkdir_p) $(DESTDIR)$(xnbdmoduledir)
+	$(INSTALL) -m 644 $(xnbdsrc)/$(xnbdmodule) $(DESTDIR)$(xnbdmoduledir)/$(xnbdmodule)
+	-/sbin/depmod -a
+
+uninstall:
+	rm -f $(DESTDIR)$(xnbdmoduledir)/$(xnbdmodule)
+	-/sbin/depmod -a
+
+clean:
+	$(MAKE) -C @kernelbuild@ SUBDIRS=`pwd` KBUILD_EXTRA_SYMBOLS=@XIOSYMS@ @KERNELMAKE_PARAMS@ clean
+
+distclean: clean
+	rm -f Makefile configure config.status
+	rm -f config.h config.log config.status config.cache
+	rm -rf .tmp_versions autom4te.cache
+
+maintainer-clean: distclean
+
+distdir: $(DISTFILES)
+	cp -p $(DISTFILES) $(distdir)
+
+
+obj-m := src/
+
+all-spec:
+	$(MAKE) -C @kernelbuild@ SUBDIRS=`pwd` KBUILD_EXTRA_SYMBOLS=@XIOSYMS@ @KERNELMAKE_PARAMS@ modules
