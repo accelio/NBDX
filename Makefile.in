@@ -10,7 +10,7 @@ DISTFILES = Makefile.in configure.ac configure install-sh \
 	src/raio_kutils.h 	\
 	src/raio_kbuffer.h 	\
 	src/raio_kutils.c	\
-	src/xnbd.c
+	src/xnbd_main.c
 
 xnbdmoduledir = @kmoduledir@/xnbd
 xnbdmodule := xnbd.ko
