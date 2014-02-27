@@ -140,6 +140,32 @@ void msg_reset(struct xio_msg *msg)
 	msg->out.header.iov_len = 0;
 }
 
+static int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
+			  unsigned long long *len)
+{
+	struct bio_vec *bvec;
+	struct req_iterator iter;
+	int i = 0;
+
+	if (XIO_MAX_IOV <= rq->bio->bi_vcnt) {
+		pr_err("unsupported io vec size\n");
+		return -ENOMEM;
+	}
+
+	*len = 0;
+	rq_for_each_segment(bvec, rq, iter) {
+		vmsg->data_iov[i].iov_base = page_address(bvec->bv_page) +
+				bvec->bv_offset;
+		vmsg->data_iov[i].iov_len =  bvec->bv_len;
+		*len += vmsg->data_iov[i].iov_len;
+		i++;
+	}
+	vmsg->data_iovlen = i;
+
+	return 0;
+}
+
+
 static int xnbd_transfer(struct xnbd_file *xdev,
 		  char *buffer,
 		  unsigned long start,
@@ -149,7 +175,7 @@ static int xnbd_transfer(struct xnbd_file *xdev,
 		  struct xnbd_queue *q)
 {
 	struct raio_io_u		*io_u;
-	int cpu, i;
+	int cpu, i, retval = 0;
 
 	pr_debug("%s called and req=%p\n", __func__, req);
 	io_u = kzalloc(sizeof(*io_u), GFP_KERNEL);
@@ -158,12 +184,12 @@ static int xnbd_transfer(struct xnbd_file *xdev,
 		return -1;
 	}
 	msg_reset(&io_u->req);
+
 	if (write) {
-		len = 1024*16;
-		raio_prep_pwrite(q->piocb, xdev->fd, buffer, len, start);
+		raio_prep_pwrite(q->piocb, xdev->fd, start);
 	}
 	else
-		raio_prep_pread(q->piocb, xdev->fd, buffer, len, start);
+		raio_prep_pread(q->piocb, xdev->fd, start);
 
 	if (!io_u->req.out.header.iov_base) {
 		io_u->req.out.header.iov_base = kzalloc(SUBMIT_BLOCK_SIZE +
@@ -175,23 +201,32 @@ static int xnbd_transfer(struct xnbd_file *xdev,
 
 	}
 
-	pack_submit_command(q->piocb, 1, io_u->req.out.header.iov_base,
-					&io_u->req.out.header.iov_len);
-
 	pr_debug("%s,%d: start=0x%llx, len=0x%lx opcode=%d\n",
 		 __func__, __LINE__, start, len, q->piocb->raio_lio_opcode);
 
 	if (q->piocb->raio_lio_opcode == RAIO_CMD_PWRITE) {
-		io_u->req.out.data_iov[0].iov_base = q->piocb->u.c.buf;
-		io_u->req.out.data_iov[0].iov_len = q->piocb->u.c.nbytes;
 		io_u->req.in.data_iovlen  = 0;
-		io_u->req.out.data_iovlen = 1;
+		retval = xnbd_rq_map_iov(req, &io_u->req.out,
+				&q->piocb->u.c.nbytes);
+		if (retval) {
+			pr_err("failed to map io vec\n");
+			kfree(io_u);
+			return retval;
+		}
 	} else {
-		io_u->req.in.data_iov[0].iov_base = q->piocb->u.c.buf;
-		io_u->req.in.data_iov[0].iov_len = q->piocb->u.c.nbytes;
-		io_u->req.in.data_iovlen  = 1;
 		io_u->req.out.data_iovlen = 0;
+		retval = xnbd_rq_map_iov(req, &io_u->req.in,
+				&q->piocb->u.c.nbytes);
+		if (retval) {
+			pr_err("failed to map io vec\n");
+			kfree(io_u);
+			return retval;
+		}
 	}
+
+	pack_submit_command(q->piocb, 1, io_u->req.out.header.iov_base,
+			    &io_u->req.out.header.iov_len);
+
 	io_u->req.user_context = io_u;
 	io_u->iocb = q->piocb;
 	io_u->breq = req; //needed for on answer to do blk_mq_end_io(breq, 0);
@@ -287,7 +322,7 @@ static int xnbd_queue_rq(struct blk_mq_hw_ctx *hctx, struct request *rq)
 	err = xnbd_request(rq, xnbd_q);
 
 	if (err)
-		return BLK_MQ_RQ_QUEUE_ERROR;
+		return err;
 	else
 		return BLK_MQ_RQ_QUEUE_OK;
 }

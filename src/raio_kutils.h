@@ -181,25 +181,21 @@ void pack_submit_command(struct raio_iocb *iocb, int is_last_in_batch,
 void pack_setup_command(int fd, int maxevents,
 			void *buf, size_t *len);
 
-static inline void raio_prep_pread(struct raio_iocb *iocb, int fd, void *buf,
-				   size_t count, long long offset)
+static inline void raio_prep_pread(struct raio_iocb *iocb,
+		int fd, long long offset)
 {
 	memset(iocb, 0, sizeof(*iocb));
 	iocb->raio_fildes = fd;
 	iocb->raio_lio_opcode = RAIO_CMD_PREAD;
-	iocb->u.c.buf = buf;
-	iocb->u.c.nbytes = count;
 	iocb->u.c.offset = offset;
 }
 
-static inline void raio_prep_pwrite(struct raio_iocb *iocb, int fd, void *buf,
-				    size_t count, long long offset)
+static inline void raio_prep_pwrite(struct raio_iocb *iocb,
+		int fd, long long offset)
 {
 	memset(iocb, 0, sizeof(*iocb));
 	iocb->raio_fildes = fd;
 	iocb->raio_lio_opcode = RAIO_CMD_PWRITE;
-	iocb->u.c.buf = buf;
-	iocb->u.c.nbytes = count;
 	iocb->u.c.offset = offset;
 }
 
