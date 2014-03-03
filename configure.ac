@@ -8,7 +8,7 @@ kernelbuild=/lib/modules/${runver}/build
 kmoduledir=/lib/modules/${runver}/extra
 xiodir=/opt/xio
 KERNELMAKE_PARAMS=-I${xiodir}/include
-XIOSYMS=${xiodir}/Module.symvers
+XIOSYMS=${xiodir}/include/Module.symvers
 AC_SUBST(kernelsrc)
 AC_SUBST(kernelbuild)
 AC_SUBST(kmoduledir)
