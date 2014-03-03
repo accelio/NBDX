@@ -72,9 +72,8 @@ MODULE_VERSION(DRV_VERSION);
 #define MAX_XNBD_DEV_NAME   256
 #define SUPPORTED_DISKS	    256
 #define SUPPORTED_PORTALS   5
-#define KERNEL_SECTOR_SIZE  512
-#define HARD_SECT_SIZE	    512
-#define SECT_SIZE_SHIFT	    ilog2(HARD_SECT_SIZE)
+#define XNBD_SECT_SIZE	    512
+#define XNBD_SECT_SHIFT	    ilog2(XNBD_SECT_SIZE)
 
 static int created_portals = 0;
 static int xnbd_major;
@@ -290,7 +289,7 @@ static int xnbd_request(struct request *req, struct xnbd_queue *xq)
 {
 
 	struct xnbd_file *xdev;
-	unsigned long start = blk_rq_pos(req) << SECT_SIZE_SHIFT;
+	unsigned long start = blk_rq_pos(req) << XNBD_SECT_SHIFT;
 	unsigned long len  = blk_rq_cur_bytes(req);
 	int write = rq_data_dir(req) == WRITE;
 	int err;
@@ -552,9 +551,9 @@ static int xnbd_setup_queues(struct xnbd_file *xdev)
 
 static int register_xnbd_device(struct xnbd_file *xnbd_file)
 {
+	sector_t size = xnbd_file->xnbd_file->stbuf->st_size;
 
 	pr_debug("%s called\n", __func__);
-
 
 	xnbd_mq_reg.queue_depth = hw_queue_depth;
 	xnbd_mq_reg.nr_hw_queues = submit_queues;
@@ -562,33 +561,34 @@ static int register_xnbd_device(struct xnbd_file *xnbd_file)
 	xnbd_file->major = xnbd_major;
 
 	xnbd_file->queue = blk_mq_init_queue(&xnbd_mq_reg, xnbd_file);
-	if (!xnbd_file->queue)
+	if (!xnbd_file->queue) {
+		pr_err("%s: Failed to allocate blk queue\n", __func__);
 		return -1;
+	}
 
 	xnbd_file->queue->queuedata = xnbd_file;
 	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, xnbd_file->queue);
 
-	/*
-	 * And the gendisk structure.
-	 */
 	xnbd_file->disk = alloc_disk_node(1, NUMA_NO_NODE);
 	if (!xnbd_file->disk) {
 		blk_cleanup_queue(xnbd_file->queue);
-		pr_warn("alloc disk failed\n");
+		pr_err("%s: Failed to allocate disk node\n", __func__);
 		return -1;
 	}
 
-	xnbd_file->disk->major 	= xnbd_file->major;
-	xnbd_file->disk->first_minor 	= xnbd_file->index;
-	xnbd_file->disk->fops 	= &xnbd_ops;
-	xnbd_file->disk->queue 	= xnbd_file->queue;
+	xnbd_file->disk->major = xnbd_file->major;
+	xnbd_file->disk->first_minor = xnbd_file->index;
+	xnbd_file->disk->fops = &xnbd_ops;
+	xnbd_file->disk->queue = xnbd_file->queue;
 	xnbd_file->disk->private_data = xnbd_file;
+	blk_queue_logical_block_size(xnbd_file->queue, XNBD_SECT_SIZE);
+	blk_queue_physical_block_size(xnbd_file->queue, XNBD_SECT_SIZE);
+	sector_div(size, XNBD_SECT_SIZE);
+	set_capacity(xnbd_file->disk, size);
 	sprintf(xnbd_file->disk->disk_name, "xnbd%d", xnbd_file->index);
-	set_capacity(xnbd_file->disk, xnbd_file->stbuf->st_size / KERNEL_SECTOR_SIZE);
 	add_disk(xnbd_file->disk);
 
 	return 0;
-
 }
 
 static int setup_raio_server(struct session_data *blk_session_data,
