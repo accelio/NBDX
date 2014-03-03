@@ -151,7 +151,7 @@ static int xnbd_transfer(struct xnbd_file *xdev,
 	struct raio_io_u		*io_u;
 	int cpu, i;
 
-	pr_info("%s called and req=%p\n", __func__, req);
+	pr_debug("%s called and req=%p\n", __func__, req);
 	io_u = kzalloc(sizeof(*io_u), GFP_KERNEL);
 	if (!io_u) {
 		pr_err("io_u alloc fail\n");
@@ -178,18 +178,14 @@ static int xnbd_transfer(struct xnbd_file *xdev,
 	pack_submit_command(q->piocb, 1, io_u->req.out.header.iov_base,
 					&io_u->req.out.header.iov_len);
 
-	pr_err("%s,%d: start=0x%llx, len=0x%x opcode=%d\n",
-				__func__, __LINE__, start, len, q->piocb->raio_lio_opcode);
+	pr_debug("%s,%d: start=0x%llx, len=0x%lx opcode=%d\n",
+		 __func__, __LINE__, start, len, q->piocb->raio_lio_opcode);
 
 	if (q->piocb->raio_lio_opcode == RAIO_CMD_PWRITE) {
 		io_u->req.out.data_iov[0].iov_base = q->piocb->u.c.buf;
 		io_u->req.out.data_iov[0].iov_len = q->piocb->u.c.nbytes;
 		io_u->req.in.data_iovlen  = 0;
 		io_u->req.out.data_iovlen = 1;
-		pr_err("io_u->req.out.data_iov[0].iov_len=%zd\n", io_u->req.out.data_iov[0].iov_len);
-		for (i = 0 ; i < 256 ; i++)
-			pr_err("0x%.2x ", ((unsigned char*)(io_u->req.out.data_iov[0].iov_base))[i]);
-		pr_err("\n");
 	} else {
 		io_u->req.in.data_iov[0].iov_base = q->piocb->u.c.buf;
 		io_u->req.in.data_iov[0].iov_len = q->piocb->u.c.nbytes;
@@ -216,8 +212,9 @@ static struct blk_mq_hw_ctx *xnbd_alloc_hctx(struct blk_mq_reg *reg, unsigned in
 	int node = 0, i, n;
 	struct blk_mq_hw_ctx * hctx;
 
-	pr_info("%s called and hctx_index=%u, b_size=%d, tip=%d, nr_online_nodes=%d\n", __func__, hctx_index, b_size, tip,
-			nr_online_nodes);
+	pr_debug("%s called\n", __func__);
+	pr_debug("hctx_index=%u, b_size=%d, tip=%d, nr_online_nodes=%d\n",
+		 hctx_index, b_size, tip, nr_online_nodes);
 	/*
 	 * Split submit queues evenly wrt to the number of nodes. If uneven,
 	 * fill the first buckets with one extra, until the rest is filled with
@@ -243,14 +240,14 @@ static struct blk_mq_hw_ctx *xnbd_alloc_hctx(struct blk_mq_reg *reg, unsigned in
 			break;
 		node--;
 	}
-	pr_info("in %s n=%d\n", __func__, n);
+	pr_debug("%s: n=%d\n", __func__, n);
 	hctx = kzalloc_node(sizeof(struct blk_mq_hw_ctx), GFP_KERNEL, n);
 	return hctx;
 }
 
 static void xnbd_free_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_index)
 {
-	pr_info("%s called\n", __func__);
+	pr_debug("%s called\n", __func__);
 	kfree(hctx);
 }
 
@@ -263,18 +260,18 @@ static int xnbd_request(struct request *req, struct xnbd_queue *xq)
 	int write = rq_data_dir(req) == WRITE;
 	int err;
 
-	pr_info("%s called\n", __func__);
+	pr_debug("%s called\n", __func__);
 
 	xdev = req->rq_disk->private_data;
 
 	if (!req->buffer) {
-		pr_info("in %s req->buffer is NULL\n", __func__);
+		pr_err("%s: req->buffer is NULL\n", __func__);
 		return 0;
 	}
 
 	err = xnbd_transfer(xdev, req->buffer, start, len, write, req, xq);
 	if (unlikely(err))
-		pr_warn("transfer failed\n");
+		pr_err("transfer failed for req %p\n", req);
 
 	return err;
 
@@ -285,7 +282,7 @@ static int xnbd_queue_rq(struct blk_mq_hw_ctx *hctx, struct request *rq)
 	struct xnbd_queue *xnbd_q;
 	int err;
 
-	pr_info("%s called\n", __func__);
+	pr_debug("%s called\n", __func__);
 	xnbd_q = hctx->driver_data;
 	err = xnbd_request(rq, xnbd_q);
 
@@ -301,10 +298,10 @@ static int xnbd_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 	struct xnbd_file *xdev = data;
 	struct xnbd_queue *xq;
 
-	pr_info("%s called index=%u\n", __func__, index);
+	pr_debug("%s called index=%u\n", __func__, index);
 
 	xq = &xdev->queues[index];
-	pr_info("%s called xq=%p\n", __func__, xq);
+	pr_debug("%s called xq=%p\n", __func__, xq);
 	xq->conn_data = xdev->conn_data[index];
 	xq->xdev = xdev;
 	xq->queue_depth = xdev->queue_depth;
@@ -359,7 +356,7 @@ static void on_submit_answer(struct xio_msg *rsp)
 	io_u->rsp = rsp;
 	breq = io_u->breq;
 
-	pr_err("%s: Got submit response\n", __func__);
+	pr_debug("%s: Got submit response\n", __func__);
 	unpack_u32((uint32_t *)&io_u->res2,
 	unpack_u32((uint32_t *)&io_u->res,
 	unpack_u32((uint32_t *)&io_u->ans.ret_errno,
@@ -369,16 +366,14 @@ static void on_submit_answer(struct xio_msg *rsp)
 		   io_u->rsp->in.header.iov_base))))));
 
 
-	pr_err("fd=%d, res=%x, res2=%x, ans.ret=%d, ans.ret_errno=%d\n",
-	       io_u->iocb->raio_fildes, io_u->res, io_u->res2,
-	       io_u->ans.ret, io_u->ans.ret_errno);
+	pr_debug("fd=%d, res=%x, res2=%x, ans.ret=%d, ans.ret_errno=%d\n",
+			io_u->iocb->raio_fildes, io_u->res, io_u->res2,
+			io_u->ans.ret, io_u->ans.ret_errno);
 
-	if (io_u->breq) {
-		pr_err("in on_submit_answer and io_u is not NULL\n");
+	if (io_u->breq)
 		blk_mq_end_io(io_u->breq, io_u->ans.ret);
-	}
 	else
-		pr_err("in on_submit_answer and io_u is NULL\n");
+		pr_err("%s: Got NULL request in response\n", __func__);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -471,31 +466,31 @@ struct xio_session_ops xnbd_ses_ops = {
 
 static int xnbd_open(struct block_device *bd, fmode_t mode)
 {
-	pr_info("%s called\n", __func__);
+	pr_debug("%s called\n", __func__);
 	return 0;
 }
 
 static void xnbd_release(struct gendisk *gd, fmode_t mode)
 {
-	pr_info("%s called\n", __func__);
+	pr_debug("%s called\n", __func__);
 }
 
 static int xnbd_media_changed(struct gendisk *gd)
 {
-	pr_info("%s called\n", __func__);
+	pr_debug("%s called\n", __func__);
 	return 0;
 }
 
 static int xnbd_revalidate(struct gendisk *gd)
 {
-	pr_info("%s called\n", __func__);
+	pr_debug("%s called\n", __func__);
 	return 0;
 }
 
 static int xnbd_ioctl(struct block_device *bd, fmode_t mode,
 		      unsigned cmd, unsigned long arg)
 {
-	pr_info("%s called\n", __func__);
+	pr_debug("%s called\n", __func__);
 	return -ENOTTY;
 }
 
@@ -511,7 +506,7 @@ static struct block_device_operations xnbd_ops = {
 
 static int xnbd_setup_queues(struct xnbd_file *xdev)
 {
-	pr_info("%s called\n", __func__);
+	pr_debug("%s called\n", __func__);
 	xdev->queues = kzalloc(submit_queues * sizeof(*xdev->queues),
 			GFP_KERNEL);
 	if (!xdev->queues)
@@ -523,7 +518,7 @@ static int xnbd_setup_queues(struct xnbd_file *xdev)
 static int register_xnbd_device(struct xnbd_file *xnbd_file)
 {
 
-	pr_info("%s called\n", __func__);
+	pr_debug("%s called\n", __func__);
 
 
 	xnbd_mq_reg.queue_depth = hw_queue_depth;
@@ -583,16 +578,16 @@ static int setup_raio_server(struct session_data *blk_session_data,
 	xio_send_request(conn_data->conn, &conn_data->req);
 	put_cpu();
 
-	pr_err("setup_raio_server: before waiting for event\n");
+	pr_debug("setup_raio_server: before waiting for event\n");
 	wait_event_interruptible(conn_data->wq, conn_data->wq_flag != 0);
-	pr_err("setup_raio_server: after waiting for event\n");
+	pr_debug("setup_raio_server: after waiting for event\n");
 	conn_data->wq_flag = 0;
 
 	retval = unpack_setup_answer(
 			conn_data->rsp->in.header.iov_base,
 			conn_data->rsp->in.header.iov_len);
 
-	pr_err("after unpacking setup_answer\n");
+	pr_debug("after unpacking setup_answer\n");
 
 	/* acknowlege xio that response is no longer needed */
 	xio_release_response(conn_data->rsp);
@@ -618,9 +613,9 @@ static int get_remote_file_size(struct session_data *blk_session_data,
 	xio_send_request(conn_data->conn, &conn_data->req);
 	put_cpu();
 
-	pr_err("in fstat: before wait_event_interruptible\n");
+	pr_debug("%s: before wait_event_interruptible\n", __func__);
 	wait_event_interruptible(conn_data->wq, conn_data->wq_flag != 0);
-	pr_err("in fstat: after wait_event_interruptible\n");
+	pr_debug("%s: after wait_event_interruptible\n", __func__);
 	conn_data->wq_flag = 0;
 
 	/* allocate stat */
@@ -635,7 +630,7 @@ static int get_remote_file_size(struct session_data *blk_session_data,
 			conn_data->rsp->in.header.iov_len,
 			xnbd_file->stbuf);
 
-	pr_err("after unpacking fstat response file_size=%u bytes\n",
+	pr_debug("after unpacking fstat response file_size=%u bytes\n",
 			xnbd_file->stbuf->st_size);
 
 	/* acknowlege xio that response is no longer needed */
@@ -668,7 +663,7 @@ static int xnbd_open_device(struct session_data *blk_session_data,
 	xnbd_file->conn_data = blk_session_data->conn_data;
 
 	if (xnbd_setup_queues(xnbd_file)){
-		pr_info("xnbd_setup_queues failed\n");
+		pr_err("xnbd_setup_queues failed\n");
 		return 1;
 	}
 
@@ -682,16 +677,16 @@ static int xnbd_open_device(struct session_data *blk_session_data,
 	xio_send_request(conn_data->conn, &conn_data->req);
 	put_cpu();
 
-	pr_err("open file: before wait_event_interruptible\n");
+	pr_debug("open file: before wait_event_interruptible\n");
 	wait_event_interruptible(conn_data->wq, conn_data->wq_flag != 0);
-	pr_err("open file: after wait_event_interruptible\n");
+	pr_debug("open file: after wait_event_interruptible\n");
 	conn_data->wq_flag = 0;
 
 	retval = unpack_open_answer(conn_data->rsp->in.header.iov_base,
 				    conn_data->rsp->in.header.iov_len,
 				    &xnbd_file->fd);
 
-	pr_err("after unpacking response fd=%d\n", xnbd_file->fd);
+	pr_debug("after unpacking response fd=%d\n", xnbd_file->fd);
 
 	/* acknowlege xio that response is no longer needed */
 	xio_release_response(conn_data->rsp);
@@ -719,7 +714,8 @@ static int xnbd_connect_work(void *data)
 {
 	struct blk_connection_data *conn_data = data;
 
-	pr_err("start work on cpu %d\n", conn_data->cpu_id);
+	pr_info("%s: start connect work on cpu %d\n", __func__,
+		conn_data->cpu_id);
 
 	memset(&conn_data->req, 0, sizeof(conn_data->req));
 	conn_data->req.out.header.iov_base = kmalloc(MAX_MSG_LEN, GFP_KERNEL);
@@ -734,7 +730,8 @@ static int xnbd_connect_work(void *data)
 		printk("context open failed\n");
 		return 1;
 	}
-	pr_err("cpu %d: context established ctx=%p\n", conn_data->cpu_id, conn_data->ctx);
+	pr_info("cpu %d: context established ctx=%p\n",
+		conn_data->cpu_id, conn_data->ctx);
 
 	conn_data->conn = xio_connect(conn_data->session, conn_data->ctx, 0,
 			NULL, conn_data);
@@ -743,7 +740,8 @@ static int xnbd_connect_work(void *data)
 		xio_context_destroy(conn_data->ctx);
 		return 1;
 	}
-	pr_err("cpu %d: connection established conn=%p\n", conn_data->cpu_id, conn_data->conn);
+	pr_info("cpu %d: connection established conn=%p\n",
+		conn_data->cpu_id, conn_data->conn);
 
 	/* the default xio supplied main loop */
 	xio_context_run_loop(conn_data->ctx);
@@ -974,7 +972,7 @@ static int __init xnbd_init_module(void)
 	if (create_sysfs_files())
 		return 1;
 
-	pr_err("nr_cpu_ids=%d\n", nr_cpu_ids);
+	pr_debug("nr_cpu_ids=%d\n", nr_cpu_ids);
 	submit_queues = nr_cpu_ids;
 
 	xnbd_major = register_blkdev(0, "xnbd");
