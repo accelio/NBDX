@@ -636,8 +636,8 @@ static int setup_raio_server(struct session_data *blk_session_data,
 
 }
 
-static int get_remote_file_size(struct session_data *blk_session_data,
-				struct xnbd_file *xnbd_file)
+static int xnbd_stat_remote_device(struct session_data *blk_session_data,
+				   struct xnbd_file *xnbd_file)
 {
 	struct blk_connection_data *conn_data;
 	int retval, cpu;
@@ -745,9 +745,10 @@ static int xnbd_create_device(struct session_data *blk_session_data,
 		goto err_queues;
 	}
 
-	retval = get_remote_file_size(blk_session_data, xnbd_file);
+	retval = xnbd_stat_remote_device(blk_session_data, xnbd_file);
 	if (retval) {
-		pr_err("failed to get size of %s\n", xnbd_file->file_name);
+		pr_err("failed to stat remote device %s ret=%d\n",
+		       xnbd_file->file_name, retval);
 		goto err_queues;
 	}
 
