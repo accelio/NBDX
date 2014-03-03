@@ -1,18 +1,20 @@
 # Object files
 *.o
 *.ko
+*.o.*
+*.ko.*
+*.mod.*
 
-# Libraries
-*.lib
-*.a
+# autoconf/configure/make files
+*modules.order
+*Module.symvers
+*Makefile
+config.*
+configure
+.tmp_versions*
+autom4te.cache
 
-# Shared objects (inc. Windows DLLs)
-*.dll
-*.so
-*.so.*
-*.dylib
-
-# Executables
-*.exe
-*.out
-*.app
+# Version control
+*cscope*
+tags
+TAGS
