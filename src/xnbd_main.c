@@ -114,7 +114,7 @@ struct xnbd_queue {
 struct xnbd_file {
 	int			     fd;
 	int			     major; /* major number from kernel */
-	struct r_stat64		    *stbuf; /* remote file stats*/
+	struct r_stat64		     stbuf; /* remote file stats*/
 	char			     file_name[MAX_XNBD_DEV_NAME];
 	struct list_head	     list; /* next node in list of struct xnbd_file */
 	struct gendisk		    *disk;
@@ -538,6 +538,13 @@ static struct block_device_operations xnbd_ops = {
 	.ioctl	         = xnbd_ioctl
 };
 
+static void xnbd_destroy_queues(struct xnbd_file *xdev)
+{
+	pr_debug("%s called\n", __func__);
+
+	kfree(xdev->queues);
+}
+
 static int xnbd_setup_queues(struct xnbd_file *xdev)
 {
 	pr_debug("%s called\n", __func__);
@@ -551,19 +558,18 @@ static int xnbd_setup_queues(struct xnbd_file *xdev)
 
 static int register_xnbd_device(struct xnbd_file *xnbd_file)
 {
-	sector_t size = xnbd_file->xnbd_file->stbuf->st_size;
+	sector_t size = xnbd_file->stbuf.st_size;
 
 	pr_debug("%s called\n", __func__);
 
 	xnbd_mq_reg.queue_depth = hw_queue_depth;
 	xnbd_mq_reg.nr_hw_queues = submit_queues;
-
 	xnbd_file->major = xnbd_major;
 
 	xnbd_file->queue = blk_mq_init_queue(&xnbd_mq_reg, xnbd_file);
-	if (!xnbd_file->queue) {
+	if (PTR_ERR(xnbd_file->queue)) {
 		pr_err("%s: Failed to allocate blk queue\n", __func__);
-		return -1;
+		return PTR_ERR(xnbd_file->queue);
 	}
 
 	xnbd_file->queue->queuedata = xnbd_file;
@@ -573,7 +579,7 @@ static int register_xnbd_device(struct xnbd_file *xnbd_file)
 	if (!xnbd_file->disk) {
 		blk_cleanup_queue(xnbd_file->queue);
 		pr_err("%s: Failed to allocate disk node\n", __func__);
-		return -1;
+		return -ENOMEM;
 	}
 
 	xnbd_file->disk->major = xnbd_file->major;
@@ -602,11 +608,9 @@ static int setup_raio_server(struct session_data *blk_session_data,
 	conn_data = blk_session_data->conn_data[cpu];
 
 	msg_reset(&conn_data->req);
-	pack_setup_command(
-			xnbd_file->fd,
-			xnbd_file->queue_depth,
-			conn_data->req.out.header.iov_base,
-			&conn_data->req.out.header.iov_len);
+	pack_setup_command(xnbd_file->fd, xnbd_file->queue_depth,
+			   conn_data->req.out.header.iov_base,
+			   &conn_data->req.out.header.iov_len);
 
 	conn_data->req.out.data_iovlen = 0;
 
@@ -618,16 +622,17 @@ static int setup_raio_server(struct session_data *blk_session_data,
 	pr_debug("setup_raio_server: after waiting for event\n");
 	conn_data->wq_flag = 0;
 
-	retval = unpack_setup_answer(
-			conn_data->rsp->in.header.iov_base,
-			conn_data->rsp->in.header.iov_len);
+	retval = unpack_setup_answer(conn_data->rsp->in.header.iov_base,
+				     conn_data->rsp->in.header.iov_len);
+	if (retval)
+		pr_err("Failed to unpack setup answer, ret=%d\n", retval);
 
 	pr_debug("after unpacking setup_answer\n");
 
 	/* acknowlege xio that response is no longer needed */
 	xio_release_response(conn_data->rsp);
 
-	return 0;
+	return retval;
 
 }
 
@@ -653,20 +658,16 @@ static int get_remote_file_size(struct session_data *blk_session_data,
 	pr_debug("%s: after wait_event_interruptible\n", __func__);
 	conn_data->wq_flag = 0;
 
-	/* allocate stat */
-	xnbd_file->stbuf = kzalloc(sizeof(*xnbd_file->stbuf), GFP_KERNEL);
-	if (!xnbd_file->stbuf) {
-		printk("xnbd_file->stbuf alloc failed\n");
-		return 1;
+	retval = unpack_fstat_answer(conn_data->rsp->in.header.iov_base,
+				     conn_data->rsp->in.header.iov_len,
+				     &xnbd_file->stbuf);
+	if (retval) {
+		pr_err("failed fstat ret=%d\n", retval);
+		return retval;
 	}
 
-	retval = unpack_fstat_answer(
-			conn_data->rsp->in.header.iov_base,
-			conn_data->rsp->in.header.iov_len,
-			xnbd_file->stbuf);
-
 	pr_debug("after unpacking fstat response file_size=%u bytes\n",
-			xnbd_file->stbuf->st_size);
+		 xnbd_file->stbuf.st_size);
 
 	/* acknowlege xio that response is no longer needed */
 	xio_release_response(conn_data->rsp);
@@ -686,20 +687,20 @@ static int xnbd_open_device(struct session_data *blk_session_data,
 	xnbd_file = kzalloc(sizeof(*xnbd_file), GFP_KERNEL);
 	if (!xnbd_file) {
 		printk("xnbd_file alloc failed\n");
-		return 1;
+		return -ENOMEM;
 	}
 
 	sscanf(xdev_name, "%s", xnbd_file->file_name);
-	//spin_lock_init(&xnbd_file->lock);
 	list_add(&xnbd_file->list, &blk_session_data->drive_list);
 	xnbd_file->index = xnbd_indexes++;
 	xnbd_file->nr_queues = submit_queues;
 	xnbd_file->queue_depth = hw_queue_depth;
 	xnbd_file->conn_data = blk_session_data->conn_data;
 
-	if (xnbd_setup_queues(xnbd_file)){
-		pr_err("xnbd_setup_queues failed\n");
-		return 1;
+	retval = xnbd_setup_queues(xnbd_file);
+	if (retval) {
+		pr_err("%s: xnbd_setup_queues failed\n", __func__);
+		goto err_file;
 	}
 
 	cpu = get_cpu();
@@ -720,28 +721,42 @@ static int xnbd_open_device(struct session_data *blk_session_data,
 	retval = unpack_open_answer(conn_data->rsp->in.header.iov_base,
 				    conn_data->rsp->in.header.iov_len,
 				    &xnbd_file->fd);
+	if (retval) {
+		pr_err("failed to open remote device ret=%d\n", retval);
+		goto err_file;
+	}
 
 	pr_debug("after unpacking response fd=%d\n", xnbd_file->fd);
 
 	/* acknowlege xio that response is no longer needed */
 	xio_release_response(conn_data->rsp);
 
-	if (get_remote_file_size(blk_session_data, xnbd_file)) {
+	retval = get_remote_file_size(blk_session_data, xnbd_file);
+	if (retval) {
 		pr_err("failed to get size of %s\n", xnbd_file->file_name);
-		return 1;
+		goto err_queues;
 	}
 
-	if (setup_raio_server(blk_session_data, xnbd_file)) {
+	retval = setup_raio_server(blk_session_data, xnbd_file);
+	if (retval) {
 		pr_err("failed to setup_raio_server %s\n", xnbd_file->file_name);
-		return 1;
+		goto err_queues;
 	}
 
-	if (register_xnbd_device(xnbd_file)) {
-		pr_err("failed to register_xnbd_device %s\n", xnbd_file->file_name);
-		return 1;
+	retval = register_xnbd_device(xnbd_file);
+	if (retval) {
+		pr_err("failed to register_xnbd_device %s\n",
+		       xnbd_file->file_name);
+		goto err_queues;
 	}
 
 	return 0;
+
+err_queues:
+	xnbd_destroy_queues(xnbd_file);
+err_file:
+	kfree(xnbd_file);
+	return retval;
 }
 
 
