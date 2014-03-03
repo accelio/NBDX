@@ -675,7 +675,7 @@ static int get_remote_file_size(struct session_data *blk_session_data,
 	return 0;
 }
 
-static int xnbd_open_device(struct session_data *blk_session_data,
+static int xnbd_create_device(struct session_data *blk_session_data,
 			    const char *xdev_name)
 {
 	struct blk_connection_data *conn_data;
@@ -909,7 +909,7 @@ static ssize_t device_store(struct kobject *kobj,
 
 	//here we need to create a block device
 	sscanf(buf, "%s", xdev_name);
-	if (xnbd_open_device(session_d, xdev_name)) {
+	if (xnbd_create_device(session_d, xdev_name)) {
 		pr_err("failed to open file=%s\n", xdev_name);
 		return -1;
 	}
