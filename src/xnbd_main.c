@@ -573,7 +573,7 @@ static int register_xnbd_device(struct xnbd_file *xnbd_file)
 	 */
 	xnbd_file->disk = alloc_disk_node(1, NUMA_NO_NODE);
 	if (!xnbd_file->disk) {
-		blk_mq_free_queue(xnbd_file->queue);
+		blk_cleanup_queue(xnbd_file->queue);
 		pr_warn("alloc disk failed\n");
 		return -1;
 	}
