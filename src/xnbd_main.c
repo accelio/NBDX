@@ -675,15 +675,51 @@ static int get_remote_file_size(struct session_data *blk_session_data,
 	return 0;
 }
 
+static int xnbd_open_remote_device(struct session_data *session_data,
+				   struct xnbd_file *xnbd_file)
+{
+	struct blk_connection_data *conn_data;
+	int retval, cpu;
+
+	cpu = get_cpu();
+	conn_data = session_data->conn_data[cpu];
+	msg_reset(&conn_data->req);
+	pack_open_command(xnbd_file->file_name, O_RDWR,
+			  conn_data->req.out.header.iov_base,
+			  &conn_data->req.out.header.iov_len);
+
+	retval = xio_send_request(conn_data->conn, &conn_data->req);
+	put_cpu();
+	if (retval) {
+		pr_err("failed xio_send_request ret=%d\n", retval);
+		return retval;
+	}
+
+	pr_debug("open file: before wait_event_interruptible\n");
+	wait_event_interruptible(conn_data->wq, conn_data->wq_flag != 0);
+	pr_debug("open file: after wait_event_interruptible\n");
+	conn_data->wq_flag = 0;
+
+	retval = unpack_open_answer(conn_data->rsp->in.header.iov_base,
+				    conn_data->rsp->in.header.iov_len,
+				    &xnbd_file->fd);
+	if (retval) {
+		pr_err("failed to open remote device ret=%d\n", retval);
+		return retval;
+	}
+
+	xio_release_response(conn_data->rsp);
+	pr_debug("after unpacking response fd=%d\n", xnbd_file->fd);
+
+	return 0;
+}
+
 static int xnbd_create_device(struct session_data *blk_session_data,
 			    const char *xdev_name)
 {
-	struct blk_connection_data *conn_data;
 	struct xnbd_file *xnbd_file;
-	int retval, cpu;
+	int retval;
 
-
-	/* create xnbd_file */
 	xnbd_file = kzalloc(sizeof(*xnbd_file), GFP_KERNEL);
 	if (!xnbd_file) {
 		printk("xnbd_file alloc failed\n");
@@ -703,33 +739,11 @@ static int xnbd_create_device(struct session_data *blk_session_data,
 		goto err_file;
 	}
 
-	cpu = get_cpu();
-	conn_data = blk_session_data->conn_data[cpu];
-	msg_reset(&conn_data->req);
-	pack_open_command(xnbd_file->file_name, O_RDWR,
-			  conn_data->req.out.header.iov_base,
-			  &conn_data->req.out.header.iov_len);
-
-	xio_send_request(conn_data->conn, &conn_data->req);
-	put_cpu();
-
-	pr_debug("open file: before wait_event_interruptible\n");
-	wait_event_interruptible(conn_data->wq, conn_data->wq_flag != 0);
-	pr_debug("open file: after wait_event_interruptible\n");
-	conn_data->wq_flag = 0;
-
-	retval = unpack_open_answer(conn_data->rsp->in.header.iov_base,
-				    conn_data->rsp->in.header.iov_len,
-				    &xnbd_file->fd);
+	retval = xnbd_open_remote_device(blk_session_data, xnbd_file);
 	if (retval) {
 		pr_err("failed to open remote device ret=%d\n", retval);
-		goto err_file;
+		goto err_queues;
 	}
-
-	pr_debug("after unpacking response fd=%d\n", xnbd_file->fd);
-
-	/* acknowlege xio that response is no longer needed */
-	xio_release_response(conn_data->rsp);
 
 	retval = get_remote_file_size(blk_session_data, xnbd_file);
 	if (retval) {
