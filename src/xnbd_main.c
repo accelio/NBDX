@@ -597,8 +597,8 @@ static int register_xnbd_device(struct xnbd_file *xnbd_file)
 	return 0;
 }
 
-static int setup_raio_server(struct session_data *blk_session_data,
-		struct xnbd_file *xnbd_file)
+static int xnbd_setup_remote_device(struct session_data *blk_session_data,
+				    struct xnbd_file *xnbd_file)
 {
 
 	int retval, cpu;
@@ -617,9 +617,9 @@ static int setup_raio_server(struct session_data *blk_session_data,
 	xio_send_request(conn_data->conn, &conn_data->req);
 	put_cpu();
 
-	pr_debug("setup_raio_server: before waiting for event\n");
+	pr_debug("%s: before waiting for event\n", __func__);
 	wait_event_interruptible(conn_data->wq, conn_data->wq_flag != 0);
-	pr_debug("setup_raio_server: after waiting for event\n");
+	pr_debug("%s: after waiting for event\n", __func__);
 	conn_data->wq_flag = 0;
 
 	retval = unpack_setup_answer(conn_data->rsp->in.header.iov_base,
@@ -752,9 +752,10 @@ static int xnbd_create_device(struct session_data *blk_session_data,
 		goto err_queues;
 	}
 
-	retval = setup_raio_server(blk_session_data, xnbd_file);
+	retval = xnbd_setup_remote_device(blk_session_data, xnbd_file);
 	if (retval) {
-		pr_err("failed to setup_raio_server %s\n", xnbd_file->file_name);
+		pr_err("failed to setup remote device %s ret=%d\n",
+		       xnbd_file->file_name, retval);
 		goto err_queues;
 	}
 
