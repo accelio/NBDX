@@ -142,10 +142,10 @@ int unpack_open_answer(char *buf, size_t len, int *fd)
 			  buf))));
 	if ((ans.command != RAIO_CMD_OPEN) ||
 	    ((ans.ret_errno == 0) && (sizeof(*fd) != ans.data_len))) {
-		return -1;
+		return -EINVAL;
 	}
 	if (ans.ret_errno) {
-		return -1;
+		return ans.ret_errno;
 	}
 	unpack_u32((uint32_t *)fd, buffer);
 
@@ -167,10 +167,10 @@ int unpack_fstat_answer(char *buf, size_t len, struct r_stat64 *stbuf)
 		 buf))));
 	if ((ans.command != RAIO_CMD_FSTAT) ||
 	    (STAT_BLOCK_SIZE != ans.data_len)) {
-		return -1;
+		return -EINVAL;
 	}
 	if (ans.ret_errno) {
-		return -1;
+		return ans.ret_errno;
 	}
 
 	buffer = unpack_stat64(stbuf, buffer);
@@ -193,10 +193,10 @@ int unpack_setup_answer(char *buf, size_t len)
 
 	if ((ans.command != RAIO_CMD_IO_SETUP) ||
 	    (0 != ans.data_len)) {
-		return -1;
+		return -EINVAL;
 	}
 	if (ans.ret_errno) {
-		return -1;
+		return ans.ret_errno;
 	}
 
 	return 0;
