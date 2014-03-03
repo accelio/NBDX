@@ -556,7 +556,7 @@ static int xnbd_setup_queues(struct xnbd_file *xdev)
 	return 0;
 }
 
-static int register_xnbd_device(struct xnbd_file *xnbd_file)
+static int xnbd_register_block_device(struct xnbd_file *xnbd_file)
 {
 	sector_t size = xnbd_file->stbuf.st_size;
 
@@ -759,10 +759,10 @@ static int xnbd_create_device(struct session_data *blk_session_data,
 		goto err_queues;
 	}
 
-	retval = register_xnbd_device(xnbd_file);
+	retval = xnbd_register_block_device(xnbd_file);
 	if (retval) {
-		pr_err("failed to register_xnbd_device %s\n",
-		       xnbd_file->file_name);
+		pr_err("failed to register xnbd device %s ret=%d\n",
+		       xnbd_file->file_name, retval);
 		goto err_queues;
 	}
 
