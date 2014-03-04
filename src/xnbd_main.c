@@ -568,8 +568,9 @@ static int xnbd_register_block_device(struct xnbd_file *xnbd_file)
 	xnbd_file->major = xnbd_major;
 
 	xnbd_file->queue = blk_mq_init_queue(&xnbd_mq_reg, xnbd_file);
-	if (PTR_ERR(xnbd_file->queue)) {
-		pr_err("%s: Failed to allocate blk queue\n", __func__);
+	if (IS_ERR(xnbd_file->queue)) {
+		pr_err("%s: Failed to allocate blk queue ret=%d\n",
+		       __func__, PTR_ERR(xnbd_file->queue));
 		return PTR_ERR(xnbd_file->queue);
 	}
 
