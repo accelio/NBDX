@@ -41,7 +41,7 @@
 int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
 		    unsigned long long *len)
 {
-	struct bio_vec *bvec;
+	struct bio_vec bvec;
 	struct req_iterator iter;
 	int i = 0;
 
@@ -52,9 +52,9 @@ int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
 
 	*len = 0;
 	rq_for_each_segment(bvec, rq, iter) {
-		vmsg->data_iov[i].iov_base = page_address(bvec->bv_page) +
-				bvec->bv_offset;
-		vmsg->data_iov[i].iov_len =  bvec->bv_len;
+		vmsg->data_iov[i].iov_base = page_address(bvec.bv_page) +
+					     bvec.bv_offset;
+		vmsg->data_iov[i].iov_len =  bvec.bv_len;
 		*len += vmsg->data_iov[i].iov_len;
 		i++;
 	}
