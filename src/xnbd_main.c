@@ -52,7 +52,7 @@
 #include <linux/fs.h>
 #include <linux/wait.h>
 #include <linux/fcntl.h>
-
+#include <linux/cpumask.h>
 #include "libxio.h"
 #include "raio_kutils.h"
 #include "raio_kbuffer.h"
@@ -1040,8 +1040,9 @@ static int __init xnbd_init_module(void)
 	if (create_sysfs_files())
 		return 1;
 
-	pr_debug("nr_cpu_ids=%d\n", nr_cpu_ids);
-	submit_queues = nr_cpu_ids;
+	pr_debug("nr_cpu_ids=%d, num_online_cpus=%d\n",
+		 nr_cpu_ids, num_online_cpus());
+	submit_queues = num_online_cpus();
 
 	xnbd_major = register_blkdev(0, "xnbd");
 	if (xnbd_major < 0)
