@@ -1,0 +1,46 @@
+From 630a6a032742eb1fabf11e6c6dc987b21b278179 Mon Sep 17 00:00:00 2001
+From: Sagi Grimberg <sagig@mellanox.com>
+Date: Tue, 4 Mar 2014 18:12:02 +0200
+Subject: [PATCH] BACKPORT: Fix for_each_segment loop for kernel < 3.14
+
+Signed-off-by: Sagi Grimberg <sagig@mellanox.com>
+---
+ src/xnbd_mq.c |   12 +++++++++++-
+ 1 files changed, 11 insertions(+), 1 deletions(-)
+
+diff --git a/src/xnbd_mq.c b/src/xnbd_mq.c
+index 9d903e3..7097fea 100644
+--- a/src/xnbd_mq.c
++++ b/src/xnbd_mq.c
+@@ -41,7 +41,11 @@
+ int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
+ 		    unsigned long long *len)
+ {
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0)
++	struct bio_vec *bvec;
++#else
+ 	struct bio_vec bvec;
++#endif
+ 	struct req_iterator iter;
+ 	int i = 0;
+ 
+@@ -52,9 +56,15 @@ int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
+ 
+ 	*len = 0;
+ 	rq_for_each_segment(bvec, rq, iter) {
++#if LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0)
++		vmsg->data_iov[i].iov_base = page_address(bvec->bv_page) +
++				bvec->bv_offset;
++		vmsg->data_iov[i].iov_len =  bvec->bv_len;
++#else
+ 		vmsg->data_iov[i].iov_base = page_address(bvec.bv_page) +
+-					     bvec.bv_offset;
++				bvec.bv_offset;
+ 		vmsg->data_iov[i].iov_len =  bvec.bv_len;
++#endif
+ 		*len += vmsg->data_iov[i].iov_len;
+ 		i++;
+ 	}
+-- 
+1.7.1
+
