@@ -35,27 +35,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#include <linux/kernel.h>
-#include <linux/module.h>
-#include <linux/kthread.h>
-#include <linux/slab.h>
-#include <linux/version.h>
-#if LINUX_VERSION_CODE < KERNEL_VERSION(2, 6, 37)
-#include <asm/atomic.h>
-#else
-#include <linux/atomic.h>
-#endif
-#include <linux/completion.h>
-#include <linux/list.h>
-#include <linux/blkdev.h>
-#include <linux/blk-mq.h>
-#include <linux/fs.h>
-#include <linux/wait.h>
-#include <linux/fcntl.h>
-#include <linux/cpumask.h>
-#include "libxio.h"
-#include "raio_kutils.h"
-#include "raio_kbuffer.h"
+
+#include "xnbd.h"
 
 #define DRV_NAME	"xnbd"
 #define PFX		DRV_NAME ": "
@@ -66,70 +47,14 @@ MODULE_DESCRIPTION("XIO network block device");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRV_VERSION);
 
-#define MAX_MSG_LEN	    512
-#define MAX_PORTAL_NAME	    256
-#define MAX_XNBD_DEV_NAME   256
-#define SUPPORTED_DISKS	    256
-#define SUPPORTED_PORTALS   5
-#define XNBD_SECT_SIZE	    512
-#define XNBD_SECT_SHIFT	    ilog2(XNBD_SECT_SIZE)
-
 static int created_portals = 0;
 static int xnbd_major;
 static int xnbd_indexes; /* num of devices created*/
 static int submit_queues;
 static int hw_queue_depth = 64;
-
 static LIST_HEAD(xnbd_file_list);
 
-struct xnbd_file;
-
-struct blk_connection_data {
-	struct xio_session  *session;
-	struct xio_context *ctx;
-	struct xio_connection *conn;
-	struct task_struct *conn_th;
-	int cpu_id;
-	wait_queue_head_t wq;
-	int wq_flag;
-	struct xio_msg req;
-	struct xio_msg *rsp;
-};
-
-struct session_data {
-	struct xio_session	     *session;
-	struct blk_connection_data  **conn_data; /*array of submit_queues conn */
-	char			      portal[MAX_PORTAL_NAME];
-	struct list_head	      drive_list; /* list of struct xnbd_file */
-};
-
-struct xnbd_queue {
-	unsigned int		     queue_depth;
-	struct blk_connection_data  *conn_data;
-	struct raio_iocb	    *piocb;
-	struct xnbd_file	    *xdev; /* pointer to parent*/
-};
-
-struct xnbd_file {
-	int			     fd;
-	int			     major; /* major number from kernel */
-	struct r_stat64		     stbuf; /* remote file stats*/
-	char			     file_name[MAX_XNBD_DEV_NAME];
-	struct list_head	     list; /* next node in list of struct xnbd_file */
-	struct gendisk		    *disk;
-	spinlock_t		     lock; /* For mutual exclusion */
-	struct request_queue	    *queue; /* The device request queue */
-	struct xnbd_queue	    *queues;
-	unsigned int		     queue_depth;
-	unsigned int		     nr_queues;
-	int			     index; /* drive idx */
-	struct blk_connection_data **conn_data; /* pointer to array of conn data */
-};
-
-/*---------------------------------------------------------------------------*/
-/* msg_reset								     */
-/*---------------------------------------------------------------------------*/
-void msg_reset(struct xio_msg *msg)
+static void msg_reset(struct xio_msg *msg)
 {
 	msg->in.header.iov_base = NULL;
 	msg->in.header.iov_len = 0;
