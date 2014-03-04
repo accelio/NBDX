@@ -48,10 +48,10 @@ MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRV_VERSION);
 
 int created_portals = 0;
-static int xnbd_major;
-static int xnbd_indexes; /* num of devices created*/
-static int submit_queues;
-static int hw_queue_depth = 64;
+int xnbd_major;
+int xnbd_indexes; /* num of devices created*/
+int submit_queues;
+int hw_queue_depth = 64;
 static LIST_HEAD(xnbd_file_list);
 struct session_data *g_session_data[SUPPORTED_PORTALS];
 
@@ -64,38 +64,8 @@ static void msg_reset(struct xio_msg *msg)
 	msg->out.header.iov_len = 0;
 }
 
-static int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
-			  unsigned long long *len)
-{
-	struct bio_vec *bvec;
-	struct req_iterator iter;
-	int i = 0;
-
-	if (XIO_MAX_IOV <= rq->bio->bi_vcnt) {
-		pr_err("unsupported io vec size\n");
-		return -ENOMEM;
-	}
-
-	*len = 0;
-	rq_for_each_segment(bvec, rq, iter) {
-		vmsg->data_iov[i].iov_base = page_address(bvec->bv_page) +
-				bvec->bv_offset;
-		vmsg->data_iov[i].iov_len =  bvec->bv_len;
-		*len += vmsg->data_iov[i].iov_len;
-		i++;
-	}
-	vmsg->data_iovlen = i;
-
-	return 0;
-}
-
-
-static int xnbd_transfer(struct xnbd_file *xdev,
-		  char *buffer,
-		  unsigned long start,
-		  unsigned long len,
-		  int write,
-		  struct request *req, //maybe should be the driver_data for end req
+int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
+		  unsigned long len, int write, struct request *req,
 		  struct xnbd_queue *q)
 {
 	struct raio_io_u		*io_u;
@@ -162,129 +132,6 @@ static int xnbd_transfer(struct xnbd_file *xdev,
 
 	return 0;
 }
-
-static struct blk_mq_hw_ctx *xnbd_alloc_hctx(struct blk_mq_reg *reg, unsigned int hctx_index)
-{
-
-	int b_size = DIV_ROUND_UP(reg->nr_hw_queues, nr_online_nodes);
-	int tip = (reg->nr_hw_queues % nr_online_nodes);
-	int node = 0, i, n;
-	struct blk_mq_hw_ctx * hctx;
-
-	pr_debug("%s called\n", __func__);
-	pr_debug("hctx_index=%u, b_size=%d, tip=%d, nr_online_nodes=%d\n",
-		 hctx_index, b_size, tip, nr_online_nodes);
-	/*
-	 * Split submit queues evenly wrt to the number of nodes. If uneven,
-	 * fill the first buckets with one extra, until the rest is filled with
-	 * no extra.
-	 */
-	for (i = 0, n = 1; i < hctx_index; i++, n++) {
-		if (n % b_size == 0) {
-			n = 0;
-			node++;
-
-			tip--;
-			if (!tip)
-				b_size = reg->nr_hw_queues / nr_online_nodes;
-		}
-	}
-
-	/*
-	 * A node might not be online, therefore map the relative node id to the
-	 * real node id.
-	 */
-	for_each_online_node(n) {
-		if (!node)
-			break;
-		node--;
-	}
-	pr_debug("%s: n=%d\n", __func__, n);
-	hctx = kzalloc_node(sizeof(struct blk_mq_hw_ctx), GFP_KERNEL, n);
-	return hctx;
-}
-
-static void xnbd_free_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_index)
-{
-	pr_debug("%s called\n", __func__);
-	kfree(hctx);
-}
-
-static int xnbd_request(struct request *req, struct xnbd_queue *xq)
-{
-
-	struct xnbd_file *xdev;
-	unsigned long start = blk_rq_pos(req) << XNBD_SECT_SHIFT;
-	unsigned long len  = blk_rq_cur_bytes(req);
-	int write = rq_data_dir(req) == WRITE;
-	int err;
-
-	pr_debug("%s called\n", __func__);
-
-	xdev = req->rq_disk->private_data;
-
-	if (!req->buffer) {
-		pr_err("%s: req->buffer is NULL\n", __func__);
-		return 0;
-	}
-
-	err = xnbd_transfer(xdev, req->buffer, start, len, write, req, xq);
-	if (unlikely(err))
-		pr_err("transfer failed for req %p\n", req);
-
-	return err;
-
-}
-
-static int xnbd_queue_rq(struct blk_mq_hw_ctx *hctx, struct request *rq)
-{
-	struct xnbd_queue *xnbd_q;
-	int err;
-
-	pr_debug("%s called\n", __func__);
-	xnbd_q = hctx->driver_data;
-	err = xnbd_request(rq, xnbd_q);
-
-	if (err)
-		return err;
-	else
-		return BLK_MQ_RQ_QUEUE_OK;
-}
-
-static int xnbd_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
-			  unsigned int index)
-{
-	struct xnbd_file *xdev = data;
-	struct xnbd_queue *xq;
-
-	pr_debug("%s called index=%u\n", __func__, index);
-
-	xq = &xdev->queues[index];
-	pr_debug("%s called xq=%p\n", __func__, xq);
-	xq->conn_data = xdev->conn_data[index];
-	xq->xdev = xdev;
-	xq->queue_depth = xdev->queue_depth;
-	xq->piocb = kzalloc(sizeof(*xq->piocb), GFP_KERNEL);
-	hctx->driver_data = xq;
-	//xnbd_init_queue(xdev, xq);
-
-	return 0;
-}
-
-static struct blk_mq_ops xnbd_mq_ops = {
-	.queue_rq       = xnbd_queue_rq,
-	.map_queue      = blk_mq_map_queue,
-	.init_hctx	= xnbd_init_hctx,
-	.alloc_hctx	= xnbd_alloc_hctx,
-	.free_hctx	= xnbd_free_hctx,
-};
-
-static struct blk_mq_reg xnbd_mq_reg = {
-	.ops		= &xnbd_mq_ops,
-	.cmd_size	= 0, // TBD sizeof(struct xnbd_cmd),
-	.flags		= BLK_MQ_F_SHOULD_MERGE,
-	.numa_node	= NUMA_NO_NODE,
-};
 
 #if 0
 static struct xnbd_file *xnbd_file_find(int fd)
@@ -412,7 +259,6 @@ static int on_session_event(struct xio_session *session,
 	return 0;
 }
 
-
 /*---------------------------------------------------------------------------*/
 /* callbacks								     */
 /*---------------------------------------------------------------------------*/
@@ -422,106 +268,6 @@ struct xio_session_ops xnbd_ses_ops = {
 	.on_msg				=  on_response,
 	.on_msg_error			=  NULL
 };
-
-static int xnbd_open(struct block_device *bd, fmode_t mode)
-{
-	pr_debug("%s called\n", __func__);
-	return 0;
-}
-
-static void xnbd_release(struct gendisk *gd, fmode_t mode)
-{
-	pr_debug("%s called\n", __func__);
-}
-
-static int xnbd_media_changed(struct gendisk *gd)
-{
-	pr_debug("%s called\n", __func__);
-	return 0;
-}
-
-static int xnbd_revalidate(struct gendisk *gd)
-{
-	pr_debug("%s called\n", __func__);
-	return 0;
-}
-
-static int xnbd_ioctl(struct block_device *bd, fmode_t mode,
-		      unsigned cmd, unsigned long arg)
-{
-	pr_debug("%s called\n", __func__);
-	return -ENOTTY;
-}
-
-
-static struct block_device_operations xnbd_ops = {
-	.owner           = THIS_MODULE,
-	.open 	         = xnbd_open,
-	.release 	 = xnbd_release,
-	.media_changed   = xnbd_media_changed,
-	.revalidate_disk = xnbd_revalidate,
-	.ioctl	         = xnbd_ioctl
-};
-
-static void xnbd_destroy_queues(struct xnbd_file *xdev)
-{
-	pr_debug("%s called\n", __func__);
-
-	kfree(xdev->queues);
-}
-
-static int xnbd_setup_queues(struct xnbd_file *xdev)
-{
-	pr_debug("%s called\n", __func__);
-	xdev->queues = kzalloc(submit_queues * sizeof(*xdev->queues),
-			GFP_KERNEL);
-	if (!xdev->queues)
-		return -ENOMEM;
-
-	return 0;
-}
-
-static int xnbd_register_block_device(struct xnbd_file *xnbd_file)
-{
-	sector_t size = xnbd_file->stbuf.st_size;
-
-	pr_debug("%s called\n", __func__);
-
-	xnbd_mq_reg.queue_depth = hw_queue_depth;
-	xnbd_mq_reg.nr_hw_queues = submit_queues;
-	xnbd_file->major = xnbd_major;
-
-	xnbd_file->queue = blk_mq_init_queue(&xnbd_mq_reg, xnbd_file);
-	if (IS_ERR(xnbd_file->queue)) {
-		pr_err("%s: Failed to allocate blk queue ret=%ld\n",
-		       __func__, PTR_ERR(xnbd_file->queue));
-		return PTR_ERR(xnbd_file->queue);
-	}
-
-	xnbd_file->queue->queuedata = xnbd_file;
-	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, xnbd_file->queue);
-
-	xnbd_file->disk = alloc_disk_node(1, NUMA_NO_NODE);
-	if (!xnbd_file->disk) {
-		blk_cleanup_queue(xnbd_file->queue);
-		pr_err("%s: Failed to allocate disk node\n", __func__);
-		return -ENOMEM;
-	}
-
-	xnbd_file->disk->major = xnbd_file->major;
-	xnbd_file->disk->first_minor = xnbd_file->index;
-	xnbd_file->disk->fops = &xnbd_ops;
-	xnbd_file->disk->queue = xnbd_file->queue;
-	xnbd_file->disk->private_data = xnbd_file;
-	blk_queue_logical_block_size(xnbd_file->queue, XNBD_SECT_SIZE);
-	blk_queue_physical_block_size(xnbd_file->queue, XNBD_SECT_SIZE);
-	sector_div(size, XNBD_SECT_SIZE);
-	set_capacity(xnbd_file->disk, size);
-	sprintf(xnbd_file->disk->disk_name, "xnbd%d", xnbd_file->index);
-	add_disk(xnbd_file->disk);
-
-	return 0;
-}
 
 static int xnbd_setup_remote_device(struct session_data *blk_session_data,
 				    struct xnbd_file *xnbd_file)
