@@ -60,7 +60,6 @@
 #define DRV_NAME	"xnbd"
 #define PFX		DRV_NAME ": "
 #define DRV_VERSION	"0.1"
-#define DRV_RELDATE	"Febuary 24, 2014"
 
 MODULE_AUTHOR("Sagi Grimberg, Max Gurtovoy");
 MODULE_DESCRIPTION("XIO network block device");
@@ -174,7 +173,7 @@ static int xnbd_transfer(struct xnbd_file *xdev,
 		  struct xnbd_queue *q)
 {
 	struct raio_io_u		*io_u;
-	int cpu, i, retval = 0;
+	int cpu, retval = 0;
 
 	pr_debug("%s called and req=%p\n", __func__, req);
 	io_u = kzalloc(sizeof(*io_u), GFP_KERNEL);
@@ -200,7 +199,7 @@ static int xnbd_transfer(struct xnbd_file *xdev,
 
 	}
 
-	pr_debug("%s,%d: start=0x%llx, len=0x%lx opcode=%d\n",
+	pr_debug("%s,%d: start=0x%lx, len=0x%lx opcode=%d\n",
 		 __func__, __LINE__, start, len, q->piocb->raio_lio_opcode);
 
 	if (q->piocb->raio_lio_opcode == RAIO_CMD_PWRITE) {
@@ -363,6 +362,7 @@ static struct blk_mq_reg xnbd_mq_reg = {
 
 static struct session_data *g_session_data[SUPPORTED_PORTALS];
 
+#if 0
 static struct xnbd_file *xnbd_file_find(int fd)
 {
 	struct xnbd_file *pos;
@@ -376,6 +376,7 @@ static struct xnbd_file *xnbd_file_find(int fd)
 	}
 	return ret;
 }
+#endif
 
 /*---------------------------------------------------------------------------*/
 /* on_submit_answer							     */
@@ -666,7 +667,7 @@ static int xnbd_stat_remote_device(struct session_data *blk_session_data,
 		return retval;
 	}
 
-	pr_debug("after unpacking fstat response file_size=%u bytes\n",
+	pr_debug("after unpacking fstat response file_size=%llx bytes\n",
 		 xnbd_file->stbuf.st_size);
 
 	/* acknowlege xio that response is no longer needed */
