@@ -47,12 +47,13 @@ MODULE_DESCRIPTION("XIO network block device");
 MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRV_VERSION);
 
-static int created_portals = 0;
+int created_portals = 0;
 static int xnbd_major;
 static int xnbd_indexes; /* num of devices created*/
 static int submit_queues;
 static int hw_queue_depth = 64;
 static LIST_HEAD(xnbd_file_list);
+struct session_data *g_session_data[SUPPORTED_PORTALS];
 
 static void msg_reset(struct xio_msg *msg)
 {
@@ -284,8 +285,6 @@ static struct blk_mq_reg xnbd_mq_reg = {
 	.flags		= BLK_MQ_F_SHOULD_MERGE,
 	.numa_node	= NUMA_NO_NODE,
 };
-
-static struct session_data *g_session_data[SUPPORTED_PORTALS];
 
 #if 0
 static struct xnbd_file *xnbd_file_find(int fd)
@@ -641,8 +640,8 @@ static int xnbd_open_remote_device(struct session_data *session_data,
 	return 0;
 }
 
-static int xnbd_create_device(struct session_data *blk_session_data,
-			    const char *xdev_name)
+int xnbd_create_device(struct session_data *blk_session_data,
+		       const char *xdev_name)
 {
 	struct xnbd_file *xnbd_file;
 	int retval;
@@ -755,7 +754,7 @@ static void xnbd_destroy_conn_data(struct blk_connection_data *conn_data)
 
 }
 
-static int xnbd_session_create(const char *portal)
+int xnbd_session_create(const char *portal)
 {
 	struct session_data	*session_data;
 	struct xio_session *session;
@@ -835,134 +834,9 @@ cleanup:
 
 }
 
-static ssize_t device_show(struct kobject *kobj,
-			   struct kobj_attribute *attr,
-			   char *buf)
-{
-	return -1;
-}
-
-static ssize_t device_store(struct kobject *kobj,
-			    struct kobj_attribute *attr,
-			    const char *buf, size_t count)
-{
-	int idx = kstrtoint(strpbrk(kobj->name, "_") + 1, 10, &idx);
-	struct session_data *session_d = g_session_data[idx];
-	char xdev_name[MAX_XNBD_DEV_NAME];
-
-	//here we need to create a block device
-	sscanf(buf, "%s", xdev_name);
-	if (xnbd_create_device(session_d, xdev_name)) {
-		pr_err("failed to open file=%s\n", xdev_name);
-		return -1;
-	}
-
-	return count;
-}
-
-static struct kobj_attribute device_attribute =
-		__ATTR(add_device, 0666, device_show, device_store);
-
-static struct attribute *default_device_attrs[] = {
-	&device_attribute.attr,
-	NULL,
-};
-
-static struct attribute_group default_device_attr_group = {
-	.attrs = default_device_attrs,
-};
-
-static struct kobject *sysfs_kobj;
-static struct kobject *portal_sysfs_kobj[SUPPORTED_PORTALS];
-
-static int create_portal_files(void)
-{
-	int err = 0;
-    char portal_name[MAX_PORTAL_NAME];
-
-    sprintf(portal_name, "xnbdhost_%d", created_portals);
-
-	portal_sysfs_kobj[created_portals] = kobject_create_and_add(portal_name, sysfs_kobj);
-	if (!portal_sysfs_kobj[created_portals])
-		return -ENOMEM;
-
-	err = sysfs_create_group(portal_sysfs_kobj[created_portals], &default_device_attr_group);
-	if (err){
-		kobject_put(portal_sysfs_kobj[created_portals]);
-	}
-	else {
-		created_portals++;
-	}
-
-	return err;
-}
-
-static void destroy_portal_files(int index)
-{
-	kobject_put(portal_sysfs_kobj[index]);
-}
-
-static ssize_t add_portal_show(struct kobject *kobj,
-		struct kobj_attribute *attr,
-		char *buf)
-{
-	return -1;
-}
-
-static ssize_t add_portal_store(struct kobject *kobj,
-		struct kobj_attribute *attr,
-		const char *buf, size_t count)
-{
-	char rdma[MAX_PORTAL_NAME] = "rdma://" ;
-	sscanf(strcat(rdma, buf), "%s", rdma);
-
-	if (xnbd_session_create(rdma)){
-		printk("Couldn't create new session with %s\n", rdma);
-		return -EINVAL;
-	}
-
-	create_portal_files();
-	return count;
-}
-
-static struct kobj_attribute add_portal_attribute =
-		__ATTR(add_portal, 0666, add_portal_show, add_portal_store);
-
-
-
-static struct attribute *default_attrs[] = {
-	&add_portal_attribute.attr,
-	NULL,
-};
-
-static struct attribute_group default_attr_group = {
-	.attrs = default_attrs,
-};
-
-
-static int create_sysfs_files(void)
-{
-	int err = 0;
-
-	sysfs_kobj = kobject_create_and_add("xnbd", NULL);
-	if (!sysfs_kobj)
-		return -ENOMEM;
-
-	err = sysfs_create_group(sysfs_kobj, &default_attr_group);
-	if (err)
-		kobject_put(sysfs_kobj);
-
-	return err;
-}
-
-static void destroy_sysfs_files(void)
-{
-	kobject_put(sysfs_kobj);
-}
-
 static int __init xnbd_init_module(void)
 {
-	if (create_sysfs_files())
+	if (xnbd_create_sysfs_files())
 		return 1;
 
 	pr_debug("nr_cpu_ids=%d, num_online_cpus=%d\n",
@@ -983,9 +857,10 @@ static void __exit xnbd_cleanup_module(void)
 	unregister_blkdev(xnbd_major, "xnbd");
 
 	for (i=0; i < created_portals; i++){
-		destroy_portal_files(i);
+		xnbd_destroy_portal_file(i);
 	}
-	destroy_sysfs_files();
+
+	xnbd_destroy_sysfs_files();
 
 }
 

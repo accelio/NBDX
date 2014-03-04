@@ -112,5 +112,15 @@ struct xnbd_file {
 	struct blk_connection_data **conn_data; /* pointer to array of conn data */
 };
 
+extern struct session_data *g_session_data[SUPPORTED_PORTALS];
+extern int created_portals;
+
+int xnbd_session_create(const char *portal);
+int xnbd_create_device(struct session_data *blk_session_data,
+		       const char *xdev_name);
+int xnbd_create_sysfs_files(void);
+void xnbd_destroy_sysfs_files(void);
+void xnbd_destroy_portal_file(int index);
+
 #endif  /* XNBD_H */
 
