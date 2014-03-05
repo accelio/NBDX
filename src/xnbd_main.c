@@ -133,21 +133,21 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 	return 0;
 }
 
-#if 0
-static struct xnbd_file *xnbd_file_find(int fd)
+static struct xnbd_file *xnbd_file_find(struct list_head *device_list,
+					const char *xdev_name)
 {
 	struct xnbd_file *pos;
 	struct xnbd_file *ret = NULL;
 
-	list_for_each_entry(pos, &xnbd_file_list, list) {
-		if (pos->fd == fd) {
+	list_for_each_entry(pos, device_list, list) {
+		if (!strcmp(pos->file_name, xdev_name)) {
 			ret = pos;
 			break;
 		}
 	}
+
 	return ret;
 }
-#endif
 
 /*---------------------------------------------------------------------------*/
 /* on_submit_answer							     */
@@ -447,6 +447,49 @@ err_file:
 	return retval;
 }
 
+int xnbd_destroy_device_by_name(struct session_data *session_data,
+		const char *xdev_name)
+{
+	struct xnbd_file *xnbd_file;
+
+	pr_err("%s\n", __func__);
+	xnbd_file = xnbd_file_find(&session_data->drive_list, xdev_name);
+	if (!xnbd_file) {
+		pr_err("xnbd_file find failed\n");
+		return 1;
+	}
+
+	return xnbd_destroy_device(session_data, xnbd_file);
+}
+
+int xnbd_destroy_device(struct session_data *session_data,
+		struct xnbd_file *xnbd_file)
+{
+	pr_err("%s\n", __func__);
+	xnbd_unregister_block_device(xnbd_file);
+
+	xnbd_destroy_queues(xnbd_file);
+
+	/* num of active files decreased */
+	xnbd_indexes--;
+
+	list_del(&xnbd_file->list);
+
+	kfree(xnbd_file);
+
+	return 0;
+
+}
+
+int xnbd_destroy_session_devices(struct session_data *session_data)
+{
+	struct xnbd_file *xdev, *tmp;
+
+	list_for_each_entry_safe(xdev, tmp, &session_data->drive_list, list) {
+		xnbd_destroy_device(session_data, xdev);
+	}
+	return 0;
+}
 
 static int xnbd_connect_work(void *data)
 {
@@ -604,6 +647,7 @@ static void __exit xnbd_cleanup_module(void)
 
 	for (i=0; i < created_portals; i++){
 		xnbd_destroy_portal_file(i);
+		xnbd_destroy_session_devices(g_session_data[i]);
 	}
 
 	xnbd_destroy_sysfs_files();

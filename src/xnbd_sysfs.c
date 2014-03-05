@@ -38,6 +38,33 @@
 
 #include "xnbd.h"
 
+static ssize_t remove_device_show(struct kobject *kobj,
+			   struct kobj_attribute *attr,
+			   char *buf)
+{
+	return -1;
+}
+
+static ssize_t remove_device_store(struct kobject *kobj,
+			    struct kobj_attribute *attr,
+			    const char *buf, size_t count)
+{
+	int idx = kstrtoint(strpbrk(kobj->name, "_") + 1, 10, &idx);
+	struct session_data *session_d = g_session_data[idx];
+	char xdev_name[MAX_XNBD_DEV_NAME];
+
+	sscanf(buf, "%s", xdev_name);
+	if (xnbd_destroy_device_by_name(session_d, xdev_name)) {
+		pr_err("failed to destroy device=%s\n", xdev_name);
+		return -1;
+	}
+
+	return count;
+}
+
+static struct kobj_attribute remove_device_attribute = __ATTR(remove_device,
+		0666, remove_device_show, remove_device_store);
+
 static ssize_t device_show(struct kobject *kobj,
 			   struct kobj_attribute *attr,
 			   char *buf)
@@ -67,6 +94,7 @@ static struct kobj_attribute device_attribute = __ATTR(add_device, 0666,
 
 static struct attribute *default_device_attrs[] = {
 	&device_attribute.attr,
+	&remove_device_attribute.attr,
 	NULL,
 };
 

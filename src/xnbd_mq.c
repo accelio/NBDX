@@ -108,8 +108,11 @@ static struct blk_mq_hw_ctx *xnbd_alloc_hctx(struct blk_mq_reg *reg,
 
 static void xnbd_free_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_index)
 {
-	pr_debug("%s called\n", __func__);
+	struct xnbd_queue *xq = hctx->driver_data;
 
+	pr_err("%s called\n", __func__);
+
+	kfree(xq->piocb);
 	kfree(hctx);
 }
 
@@ -287,4 +290,11 @@ int xnbd_register_block_device(struct xnbd_file *xnbd_file)
 	add_disk(xnbd_file->disk);
 
 	return 0;
+}
+
+void xnbd_unregister_block_device(struct xnbd_file *xnbd_file)
+{
+	del_gendisk(xnbd_file->disk);
+	blk_cleanup_queue(xnbd_file->queue);
+	put_disk(xnbd_file->disk);
 }

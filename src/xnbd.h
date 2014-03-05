@@ -125,12 +125,18 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 int xnbd_session_create(const char *portal);
 int xnbd_create_device(struct session_data *blk_session_data,
 		       const char *xdev_name);
+int xnbd_destroy_device_by_name(struct session_data *session_data,
+		       const char *xdev_name);
+int xnbd_destroy_device(struct session_data *session_data,
+			   struct xnbd_file *xdev_file);
+int xnbd_destroy_session_devices(struct session_data *session_data);
 int xnbd_create_sysfs_files(void);
 void xnbd_destroy_sysfs_files(void);
 void xnbd_destroy_portal_file(int index);
 int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
 		    unsigned long long *len);
 int xnbd_register_block_device(struct xnbd_file *xnbd_file);
+void xnbd_unregister_block_device(struct xnbd_file *xnbd_file);
 int xnbd_setup_queues(struct xnbd_file *xdev);
 void xnbd_destroy_queues(struct xnbd_file *xdev);
 
