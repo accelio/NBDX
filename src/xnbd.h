@@ -142,6 +142,7 @@ int xnbd_setup_queues(struct xnbd_file *xdev);
 void xnbd_destroy_queues(struct xnbd_file *xdev);
 struct session_data *xnbd_session_data_find(struct list_head *s_data_list,
 					    const char *host_name);
+void xnbd_session_destroy(struct session_data *session_data);
 
 #endif  /* XNBD_H */
 

@@ -652,6 +652,13 @@ cleanup:
 
 }
 
+void xnbd_session_destroy(struct session_data *session_data)
+{
+	xnbd_destroy_session_devices(session_data);
+	list_del(&session_data->list);
+	kfree(session_data);
+}
+
 static int __init xnbd_init_module(void)
 {
 	if (xnbd_create_sysfs_files())
@@ -680,8 +687,7 @@ static void __exit xnbd_cleanup_module(void)
 	mutex_lock(&g_lock);
 	list_for_each_entry_safe(session_data, tmp, &g_session_data, list) {
 		xnbd_destroy_portal_file(session_data->kobj);
-		xnbd_destroy_session_devices(session_data);
-		list_del(&session_data->list);
+		xnbd_session_destroy(session_data);
 	}
 	mutex_unlock(&g_lock);
 

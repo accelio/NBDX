@@ -38,6 +38,59 @@
 
 #include "xnbd.h"
 
+static void _xnbd_destroy_portal_file(void *obj)
+{
+	struct kobject *kobj = (struct kobject *)obj;
+
+	xnbd_destroy_portal_file(kobj);
+}
+
+static ssize_t delete_show(struct kobject *kobj,
+			   struct kobj_attribute *attr,
+			   char *buf)
+{
+	return -1;
+}
+
+static ssize_t delete_store(struct kobject *kobj,
+			    struct kobj_attribute *attr,
+			    const char *buf, size_t count)
+{
+	int i;
+	struct session_data *session_d;
+	ssize_t ret;
+
+	if (kstrtoint(buf, 10, &i)) {
+		pr_err("failed to process input value\n");
+		return -EINVAL;
+	}
+
+	if (i != 1) {
+		pr_err("unknown value: %d\n", i);
+		return -EINVAL;
+	}
+
+	mutex_lock(&g_lock);
+	session_d = xnbd_session_data_find(&g_session_data, kobj->name);
+	if (!session_d) {
+		pr_err("%s: didn't find session_data, probably was removed\n", __func__);
+		ret = -ENOENT;
+		goto out;
+	}
+	xnbd_session_destroy(session_d);
+
+	ret = count;
+out:
+	mutex_unlock(&g_lock);
+	sysfs_schedule_callback(kobj, _xnbd_destroy_portal_file,
+				kobj, THIS_MODULE);
+
+	return ret;
+}
+
+static struct kobj_attribute delete_attribute = __ATTR(delete, 0666,
+						       delete_show, delete_store);
+
 static ssize_t remove_device_show(struct kobject *kobj,
 			   struct kobj_attribute *attr,
 			   char *buf)
@@ -119,6 +172,7 @@ static struct kobj_attribute device_attribute = __ATTR(add_device, 0666,
 static struct attribute *default_device_attrs[] = {
 	&device_attribute.attr,
 	&remove_device_attribute.attr,
+	&delete_attribute.attr,
 	NULL,
 };
 
