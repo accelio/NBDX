@@ -53,7 +53,8 @@ int xnbd_indexes; /* num of devices created*/
 int submit_queues;
 int hw_queue_depth = 64;
 static LIST_HEAD(xnbd_file_list);
-struct session_data *g_session_data[SUPPORTED_PORTALS];
+struct list_head g_session_data;
+struct mutex g_lock;
 
 static void msg_reset(struct xio_msg *msg)
 {
@@ -141,6 +142,22 @@ static struct xnbd_file *xnbd_file_find(struct list_head *device_list,
 
 	list_for_each_entry(pos, device_list, list) {
 		if (!strcmp(pos->file_name, xdev_name)) {
+			ret = pos;
+			break;
+		}
+	}
+
+	return ret;
+}
+
+struct session_data *xnbd_session_data_find(struct list_head *s_data_list,
+					const char *host_name)
+{
+	struct session_data *pos;
+	struct session_data *ret = NULL;
+
+	list_for_each_entry(pos, s_data_list, list) {
+		if (!strcmp(pos->kobj->name, host_name)) {
 			ret = pos;
 			break;
 		}
@@ -573,7 +590,15 @@ int xnbd_session_create(const char *portal)
 
 	INIT_LIST_HEAD(&session_data->drive_list);
 
-	g_session_data[created_portals] = session_data;
+	mutex_lock(&g_lock);
+	session_data->kobj = xnbd_create_portal_files();
+	if (!session_data->kobj) {
+		mutex_unlock(&g_lock);
+		goto cleanup1;
+	}
+	list_add(&session_data->list, &g_session_data);
+	created_portals++;
+	mutex_unlock(&g_lock);
 
 	session_data->conn_data = kzalloc(submit_queues * sizeof(*session_data->conn_data),
 					  GFP_KERNEL);
@@ -636,19 +661,25 @@ static int __init xnbd_init_module(void)
 	if (xnbd_major < 0)
 		return xnbd_major;
 
+	mutex_init(&g_lock);
+	INIT_LIST_HEAD(&g_session_data);
+
 	return 0;
 }
 
 static void __exit xnbd_cleanup_module(void)
 {
-	int i;
+	struct session_data *session_data, *tmp;
 
 	unregister_blkdev(xnbd_major, "xnbd");
 
-	for (i=0; i < created_portals; i++){
-		xnbd_destroy_portal_file(i);
-		xnbd_destroy_session_devices(g_session_data[i]);
+	mutex_lock(&g_lock);
+	list_for_each_entry_safe(session_data, tmp, &g_session_data, list) {
+		xnbd_destroy_portal_file(session_data->kobj);
+		xnbd_destroy_session_devices(session_data);
+		list_del(&session_data->list);
 	}
+	mutex_unlock(&g_lock);
 
 	xnbd_destroy_sysfs_files();
 

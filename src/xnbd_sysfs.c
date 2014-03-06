@@ -49,9 +49,14 @@ static ssize_t remove_device_store(struct kobject *kobj,
 			    struct kobj_attribute *attr,
 			    const char *buf, size_t count)
 {
-	int idx = kstrtoint(strpbrk(kobj->name, "_") + 1, 10, &idx);
-	struct session_data *session_d = g_session_data[idx];
+	struct session_data *session_d;
 	char xdev_name[MAX_XNBD_DEV_NAME];
+
+	session_d = xnbd_session_data_find(&g_session_data, kobj->name);
+	if (!session_d) {
+		pr_err("%s: failed to find session data\n", __func__);
+		return -1;
+	}
 
 	sscanf(buf, "%s", xdev_name);
 	if (xnbd_destroy_device_by_name(session_d, xdev_name)) {
@@ -76,9 +81,14 @@ static ssize_t device_store(struct kobject *kobj,
 			    struct kobj_attribute *attr,
 			    const char *buf, size_t count)
 {
-	int idx = kstrtoint(strpbrk(kobj->name, "_") + 1, 10, &idx);
-	struct session_data *session_d = g_session_data[idx];
+	struct session_data *session_d;
 	char xdev_name[MAX_XNBD_DEV_NAME];
+
+	session_d = xnbd_session_data_find(&g_session_data, kobj->name);
+	if (!session_d) {
+		pr_err("%s: failed to find session data\n", __func__);
+		return -1;
+	}
 
 	sscanf(buf, "%s", xdev_name);
 	if (xnbd_create_device(session_d, xdev_name)) {
@@ -103,35 +113,33 @@ static struct attribute_group default_device_attr_group = {
 };
 
 static struct kobject *sysfs_kobj;
-static struct kobject *portal_sysfs_kobj[SUPPORTED_PORTALS];
 
-int xnbd_create_portal_files(void)
+struct kobject* xnbd_create_portal_files(void)
 {
 	int err = 0;
 	char portal_name[MAX_PORTAL_NAME];
+	struct kobject *kobj;
 
 	sprintf(portal_name, "xnbdhost_%d", created_portals);
 
-	portal_sysfs_kobj[created_portals] = kobject_create_and_add(portal_name,
-								    sysfs_kobj);
-	if (!portal_sysfs_kobj[created_portals]) {
-		pr_err("failedto create kobject\n");
-		return -ENOMEM;
+	kobj = kobject_create_and_add(portal_name, sysfs_kobj);
+	if (!kobj) {
+		pr_err("failed to create kobject\n");
+		return NULL;
 	}
 
-	err = sysfs_create_group(portal_sysfs_kobj[created_portals],
-				 &default_device_attr_group);
-	if (err)
-		kobject_put(portal_sysfs_kobj[created_portals]);
-	else
-		created_portals++;
+	err = sysfs_create_group(kobj, &default_device_attr_group);
+	if (err) {
+		kobject_put(kobj);
+		return NULL;
+	}
 
-	return err;
+	return kobj;
 }
 
-void xnbd_destroy_portal_file(int index)
+void xnbd_destroy_portal_file(struct kobject *kobj)
 {
-	kobject_put(portal_sysfs_kobj[index]);
+	kobject_put(kobj);
 }
 
 static ssize_t add_portal_show(struct kobject *kobj,
@@ -153,7 +161,6 @@ static ssize_t add_portal_store(struct kobject *kobj,
 		return -EINVAL;
 	}
 
-	xnbd_create_portal_files();
 	return count;
 }
 
