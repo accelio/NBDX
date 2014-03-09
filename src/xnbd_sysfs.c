@@ -51,20 +51,27 @@ static ssize_t remove_device_store(struct kobject *kobj,
 {
 	struct session_data *session_d;
 	char xdev_name[MAX_XNBD_DEV_NAME];
+	ssize_t ret;
 
+	mutex_lock(&g_lock);
 	session_d = xnbd_session_data_find(&g_session_data, kobj->name);
 	if (!session_d) {
 		pr_err("%s: failed to find session data\n", __func__);
-		return -1;
+		ret = -ENOENT;
+		goto out;
 	}
 
 	sscanf(buf, "%s", xdev_name);
-	if (xnbd_destroy_device_by_name(session_d, xdev_name)) {
+	ret = xnbd_destroy_device_by_name(session_d, xdev_name);
+	if (ret) {
 		pr_err("failed to destroy device=%s\n", xdev_name);
-		return -1;
+		goto out;
 	}
 
-	return count;
+	ret = count;
+out:
+	mutex_unlock(&g_lock);
+	return ret;
 }
 
 static struct kobj_attribute remove_device_attribute = __ATTR(remove_device,
@@ -83,20 +90,27 @@ static ssize_t device_store(struct kobject *kobj,
 {
 	struct session_data *session_d;
 	char xdev_name[MAX_XNBD_DEV_NAME];
+	ssize_t ret;
 
+	mutex_lock(&g_lock);
 	session_d = xnbd_session_data_find(&g_session_data, kobj->name);
 	if (!session_d) {
 		pr_err("%s: failed to find session data\n", __func__);
-		return -1;
+		ret = -ENOENT;
+		goto out;
 	}
 
 	sscanf(buf, "%s", xdev_name);
-	if (xnbd_create_device(session_d, xdev_name)) {
+	ret = xnbd_create_device(session_d, xdev_name);
+	if (ret) {
 		pr_err("failed to open file=%s\n", xdev_name);
-		return -1;
+		goto out;
 	}
 
-	return count;
+	ret = count;
+out:
+	mutex_unlock(&g_lock);
+	return ret;
 }
 
 static struct kobj_attribute device_attribute = __ATTR(add_device, 0666,
