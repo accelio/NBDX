@@ -88,6 +88,7 @@ struct session_data {
 	char			      portal[MAX_PORTAL_NAME];
 	struct list_head	      list;
 	struct list_head	      devs_list; /* list of struct xnbd_file */
+	spinlock_t		      devs_lock;
 	struct kobject		     *kobj;
 };
 

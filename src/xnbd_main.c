@@ -134,18 +134,20 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 	return 0;
 }
 
-static struct xnbd_file *xnbd_file_find(struct list_head *device_list,
+static struct xnbd_file *xnbd_file_find(struct session_data *session_data,
 					const char *xdev_name)
 {
 	struct xnbd_file *pos;
 	struct xnbd_file *ret = NULL;
 
-	list_for_each_entry(pos, device_list, list) {
+	spin_lock(&session_data->devs_lock);
+	list_for_each_entry(pos, &session_data->devs_list, list) {
 		if (!strcmp(pos->file_name, xdev_name)) {
 			ret = pos;
 			break;
 		}
 	}
+	spin_unlock(&session_data->devs_lock);
 
 	return ret;
 }
@@ -416,11 +418,13 @@ int xnbd_create_device(struct session_data *blk_session_data,
 	}
 
 	sscanf(xdev_name, "%s", xnbd_file->file_name);
-	list_add(&xnbd_file->list, &blk_session_data->devs_list);
 	xnbd_file->index = xnbd_indexes++;
 	xnbd_file->nr_queues = submit_queues;
 	xnbd_file->queue_depth = hw_queue_depth;
 	xnbd_file->conn_data = blk_session_data->conn_data;
+	spin_lock(&blk_session_data->devs_lock);
+	list_add(&xnbd_file->list, &blk_session_data->devs_list);
+	spin_unlock(&blk_session_data->devs_lock);
 
 	retval = xnbd_setup_queues(xnbd_file);
 	if (retval) {
@@ -470,7 +474,7 @@ int xnbd_destroy_device_by_name(struct session_data *session_data,
 	struct xnbd_file *xnbd_file;
 
 	pr_err("%s\n", __func__);
-	xnbd_file = xnbd_file_find(&session_data->devs_list, xdev_name);
+	xnbd_file = xnbd_file_find(session_data, xdev_name);
 	if (!xnbd_file) {
 		pr_err("xnbd_file find failed\n");
 		return 1;
@@ -490,7 +494,9 @@ int xnbd_destroy_device(struct session_data *session_data,
 	/* num of active files decreased */
 	xnbd_indexes--;
 
+	spin_lock(&session_data->devs_lock);
 	list_del(&xnbd_file->list);
+	spin_unlock(&session_data->devs_lock);
 
 	kfree(xnbd_file);
 
@@ -589,6 +595,7 @@ int xnbd_session_create(const char *portal)
 			goto cleanup;
 
 	INIT_LIST_HEAD(&session_data->devs_list);
+	spin_lock_init(&session_data->devs_lock);
 
 	mutex_lock(&g_lock);
 	session_data->kobj = xnbd_create_portal_files();
