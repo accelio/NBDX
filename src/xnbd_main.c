@@ -125,9 +125,9 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 	io_u->iocb = q->piocb;
 	io_u->breq = req; //needed for on answer to do blk_mq_end_io(breq, 0);
 
-	pr_debug("sending req on cpu=%d\n", q->conn_data->cpu_id);
+	pr_debug("sending req on cpu=%d\n", q->xnbd_conn->cpu_id);
 	cpu = get_cpu();
-	xio_send_request(q->conn_data->conn, &io_u->req);
+	xio_send_request(q->xnbd_conn->conn, &io_u->req);
 	put_cpu();
 
 	return 0;
@@ -208,7 +208,7 @@ static int on_response(struct xio_session *session,
 		       int more_in_batch,
 		       void *cb_user_context)
 {
-	struct blk_connection_data *conn_data = cb_user_context;
+	struct xnbd_connection *xnbd_conn = cb_user_context;
 	uint32_t command;
 
 	unpack_u32(&command, rsp->in.header.iov_base);
@@ -226,9 +226,9 @@ static int on_response(struct xio_session *session,
 	case RAIO_CMD_IO_SETUP:
 	//case RAIO_CMD_IO_DESTROY:
 		/* break the loop */
-		conn_data->rsp = rsp;
-		conn_data->wq_flag = 1;
-		wake_up_interruptible(&conn_data->wq);
+		xnbd_conn->rsp = rsp;
+		xnbd_conn->wq_flag = 1;
+		wake_up_interruptible(&xnbd_conn->wq);
 		break;
 	default:
 		printk("on_response: unknown answer %d\n", command);
@@ -247,7 +247,7 @@ static int on_session_event(struct xio_session *session,
 		void *cb_user_context)
 {
 	struct session_data *session_data = cb_user_context;
-	struct blk_connection_data *conn_data;
+	struct xnbd_connection *xnbd_conn;
 	struct xio_connection	*conn = event_data->conn;
 	int i;
 
@@ -259,8 +259,8 @@ static int on_session_event(struct xio_session *session,
 		session_data->session = NULL;
 		xio_session_destroy(session);
 		for (i = 0; i < submit_queues; i++) {
-			conn_data = session_data->conn_data[i];
-			xio_context_stop_loop(conn_data->ctx); /* exit */
+			xnbd_conn = session_data->xnbd_conns[i];
+			xio_context_stop_loop(xnbd_conn->ctx); /* exit */
 		}
 		break;
 	case XIO_SESSION_CONNECTION_TEARDOWN_EVENT:
@@ -292,35 +292,35 @@ static int xnbd_setup_remote_device(struct session_data *blk_session_data,
 {
 
 	int retval, cpu;
-	struct blk_connection_data *conn_data;
+	struct xnbd_connection *xnbd_conn;
 
 	cpu = get_cpu();
-	conn_data = blk_session_data->conn_data[cpu];
+	xnbd_conn = blk_session_data->xnbd_conns[cpu];
 
-	msg_reset(&conn_data->req);
+	msg_reset(&xnbd_conn->req);
 	pack_setup_command(xnbd_file->fd, xnbd_file->queue_depth,
-			   conn_data->req.out.header.iov_base,
-			   &conn_data->req.out.header.iov_len);
+			   xnbd_conn->req.out.header.iov_base,
+			   &xnbd_conn->req.out.header.iov_len);
 
-	conn_data->req.out.data_iovlen = 0;
+	xnbd_conn->req.out.data_iovlen = 0;
 
-	xio_send_request(conn_data->conn, &conn_data->req);
+	xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
 	put_cpu();
 
 	pr_debug("%s: before waiting for event\n", __func__);
-	wait_event_interruptible(conn_data->wq, conn_data->wq_flag != 0);
+	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
 	pr_debug("%s: after waiting for event\n", __func__);
-	conn_data->wq_flag = 0;
+	xnbd_conn->wq_flag = 0;
 
-	retval = unpack_setup_answer(conn_data->rsp->in.header.iov_base,
-				     conn_data->rsp->in.header.iov_len);
+	retval = unpack_setup_answer(xnbd_conn->rsp->in.header.iov_base,
+				     xnbd_conn->rsp->in.header.iov_len);
 	if (retval)
 		pr_err("Failed to unpack setup answer, ret=%d\n", retval);
 
 	pr_debug("after unpacking setup_answer\n");
 
 	/* acknowlege xio that response is no longer needed */
-	xio_release_response(conn_data->rsp);
+	xio_release_response(xnbd_conn->rsp);
 
 	return retval;
 
@@ -329,27 +329,27 @@ static int xnbd_setup_remote_device(struct session_data *blk_session_data,
 static int xnbd_stat_remote_device(struct session_data *blk_session_data,
 				   struct xnbd_file *xnbd_file)
 {
-	struct blk_connection_data *conn_data;
+	struct xnbd_connection *xnbd_conn;
 	int retval, cpu;
 
 	cpu = get_cpu();
-	conn_data = blk_session_data->conn_data[cpu];
+	xnbd_conn = blk_session_data->xnbd_conns[cpu];
 
-	msg_reset(&conn_data->req);
+	msg_reset(&xnbd_conn->req);
 	pack_fstat_command(xnbd_file->fd,
-			   conn_data->req.out.header.iov_base,
-			   &conn_data->req.out.header.iov_len);
+			   xnbd_conn->req.out.header.iov_base,
+			   &xnbd_conn->req.out.header.iov_len);
 
-	xio_send_request(conn_data->conn, &conn_data->req);
+	xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
 	put_cpu();
 
 	pr_debug("%s: before wait_event_interruptible\n", __func__);
-	wait_event_interruptible(conn_data->wq, conn_data->wq_flag != 0);
+	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
 	pr_debug("%s: after wait_event_interruptible\n", __func__);
-	conn_data->wq_flag = 0;
+	xnbd_conn->wq_flag = 0;
 
-	retval = unpack_fstat_answer(conn_data->rsp->in.header.iov_base,
-				     conn_data->rsp->in.header.iov_len,
+	retval = unpack_fstat_answer(xnbd_conn->rsp->in.header.iov_base,
+				     xnbd_conn->rsp->in.header.iov_len,
 				     &xnbd_file->stbuf);
 	if (retval) {
 		pr_err("failed fstat ret=%d\n", retval);
@@ -360,7 +360,7 @@ static int xnbd_stat_remote_device(struct session_data *blk_session_data,
 		 xnbd_file->stbuf.st_size);
 
 	/* acknowlege xio that response is no longer needed */
-	xio_release_response(conn_data->rsp);
+	xio_release_response(xnbd_conn->rsp);
 
 	return 0;
 }
@@ -368,17 +368,17 @@ static int xnbd_stat_remote_device(struct session_data *blk_session_data,
 static int xnbd_open_remote_device(struct session_data *session_data,
 				   struct xnbd_file *xnbd_file)
 {
-	struct blk_connection_data *conn_data;
+	struct xnbd_connection *xnbd_conn;
 	int retval, cpu;
 
 	cpu = get_cpu();
-	conn_data = session_data->conn_data[cpu];
-	msg_reset(&conn_data->req);
+	xnbd_conn = session_data->xnbd_conns[cpu];
+	msg_reset(&xnbd_conn->req);
 	pack_open_command(xnbd_file->file_name, O_RDWR,
-			  conn_data->req.out.header.iov_base,
-			  &conn_data->req.out.header.iov_len);
+			  xnbd_conn->req.out.header.iov_base,
+			  &xnbd_conn->req.out.header.iov_len);
 
-	retval = xio_send_request(conn_data->conn, &conn_data->req);
+	retval = xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
 	put_cpu();
 	if (retval) {
 		pr_err("failed xio_send_request ret=%d\n", retval);
@@ -386,19 +386,19 @@ static int xnbd_open_remote_device(struct session_data *session_data,
 	}
 
 	pr_debug("open file: before wait_event_interruptible\n");
-	wait_event_interruptible(conn_data->wq, conn_data->wq_flag != 0);
+	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
 	pr_debug("open file: after wait_event_interruptible\n");
-	conn_data->wq_flag = 0;
+	xnbd_conn->wq_flag = 0;
 
-	retval = unpack_open_answer(conn_data->rsp->in.header.iov_base,
-				    conn_data->rsp->in.header.iov_len,
+	retval = unpack_open_answer(xnbd_conn->rsp->in.header.iov_base,
+				    xnbd_conn->rsp->in.header.iov_len,
 				    &xnbd_file->fd);
 	if (retval) {
 		pr_err("failed to open remote device ret=%d\n", retval);
 		return retval;
 	}
 
-	xio_release_response(conn_data->rsp);
+	xio_release_response(xnbd_conn->rsp);
 	pr_debug("after unpacking response fd=%d\n", xnbd_file->fd);
 
 	return 0;
@@ -420,7 +420,7 @@ int xnbd_create_device(struct session_data *blk_session_data,
 	xnbd_file->index = xnbd_indexes++;
 	xnbd_file->nr_queues = submit_queues;
 	xnbd_file->queue_depth = hw_queue_depth;
-	xnbd_file->conn_data = blk_session_data->conn_data;
+	xnbd_file->xnbd_conns = blk_session_data->xnbd_conns;
 	spin_lock(&blk_session_data->devs_lock);
 	list_add(&xnbd_file->list, &blk_session_data->devs_list);
 	spin_unlock(&blk_session_data->devs_lock);
@@ -513,53 +513,53 @@ static void xnbd_destroy_session_devices(struct session_data *session_data)
 
 static int xnbd_connect_work(void *data)
 {
-	struct blk_connection_data *conn_data = data;
+	struct xnbd_connection *xnbd_conn = data;
 
 	pr_info("%s: start connect work on cpu %d\n", __func__,
-		conn_data->cpu_id);
+		xnbd_conn->cpu_id);
 
-	memset(&conn_data->req, 0, sizeof(conn_data->req));
-	conn_data->req.out.header.iov_base = kmalloc(MAX_MSG_LEN, GFP_KERNEL);
-	conn_data->req.out.header.iov_len = MAX_MSG_LEN;
-	conn_data->req.out.data_iovlen = 0;
+	memset(&xnbd_conn->req, 0, sizeof(xnbd_conn->req));
+	xnbd_conn->req.out.header.iov_base = kmalloc(MAX_MSG_LEN, GFP_KERNEL);
+	xnbd_conn->req.out.header.iov_len = MAX_MSG_LEN;
+	xnbd_conn->req.out.data_iovlen = 0;
 
-	init_waitqueue_head(&conn_data->wq);
-	conn_data->wq_flag = 0;
+	init_waitqueue_head(&xnbd_conn->wq);
+	xnbd_conn->wq_flag = 0;
 
-	conn_data->ctx = xio_context_create(XIO_LOOP_GIVEN_THREAD, NULL, current, 0, conn_data->cpu_id);
-	if (!conn_data->ctx) {
+	xnbd_conn->ctx = xio_context_create(XIO_LOOP_GIVEN_THREAD, NULL, current, 0, xnbd_conn->cpu_id);
+	if (!xnbd_conn->ctx) {
 		printk("context open failed\n");
 		return 1;
 	}
 	pr_info("cpu %d: context established ctx=%p\n",
-		conn_data->cpu_id, conn_data->ctx);
+		xnbd_conn->cpu_id, xnbd_conn->ctx);
 
-	conn_data->conn = xio_connect(conn_data->session, conn_data->ctx, 0,
-			NULL, conn_data);
-	if (!conn_data->conn){
+	xnbd_conn->conn = xio_connect(xnbd_conn->session, xnbd_conn->ctx, 0,
+			NULL, xnbd_conn);
+	if (!xnbd_conn->conn){
 		printk("connection open failed\n");
-		xio_context_destroy(conn_data->ctx);
+		xio_context_destroy(xnbd_conn->ctx);
 		return 1;
 	}
 	pr_info("cpu %d: connection established conn=%p\n",
-		conn_data->cpu_id, conn_data->conn);
+		xnbd_conn->cpu_id, xnbd_conn->conn);
 
 	/* the default xio supplied main loop */
-	xio_context_run_loop(conn_data->ctx);
+	xio_context_run_loop(xnbd_conn->ctx);
 	return 0;
 }
 
 /**
- * destroy conn_data before waking up ktread task
+ * destroy xnbd_conn before waking up ktread task
  */
-static void xnbd_destroy_conn_data(struct blk_connection_data *conn_data)
+static void xnbd_destroy_xnbd_conn(struct xnbd_connection *xnbd_conn)
 {
-	struct task_struct *task = conn_data->conn_th;
+	struct task_struct *task = xnbd_conn->conn_th;
 
-	conn_data->session = NULL;
-	conn_data->conn_th = NULL;
+	xnbd_conn->session = NULL;
+	xnbd_conn->conn_th = NULL;
 	kfree(task);
-	kfree(conn_data);
+	kfree(xnbd_conn);
 
 }
 
@@ -604,41 +604,41 @@ int xnbd_session_create(const char *portal)
 	created_portals++;
 	mutex_unlock(&g_lock);
 
-	session_data->conn_data = kzalloc(submit_queues * sizeof(*session_data->conn_data),
+	session_data->xnbd_conns = kzalloc(submit_queues * sizeof(*session_data->xnbd_conns),
 					  GFP_KERNEL);
-	if (!session_data->conn_data) {
-		printk("session_data->conn_data alloc failed\n");
+	if (!session_data->xnbd_conns) {
+		printk("session_data->xnbd_conn alloc failed\n");
 		goto cleanup1;
 	}
 
 	for (i = 0; i < submit_queues; i++) {
-		session_data->conn_data[i] = kzalloc(sizeof(*session_data->conn_data[i]),
+		session_data->xnbd_conns[i] = kzalloc(sizeof(*session_data->xnbd_conns[i]),
 							    GFP_KERNEL);
-		if (!session_data->conn_data[i]) {
+		if (!session_data->xnbd_conns[i]) {
 			goto cleanup2;
 	    }
 		sprintf(name, "session thread %d", i);
-		session_data->conn_data[i]->session = session_data->session;
-		session_data->conn_data[i]->cpu_id = i;
+		session_data->xnbd_conns[i]->session = session_data->session;
+		session_data->xnbd_conns[i]->cpu_id = i;
 		printk("opening thread on cpu %d\n", i);
-		session_data->conn_data[i]->conn_th = kthread_create(xnbd_connect_work,
-								     session_data->conn_data[i],
+		session_data->xnbd_conns[i]->conn_th = kthread_create(xnbd_connect_work,
+								     session_data->xnbd_conns[i],
 								     name);
-		kthread_bind(session_data->conn_data[i]->conn_th, i);
+		kthread_bind(session_data->xnbd_conns[i]->conn_th, i);
 	}
 
 	/* kick all threads after verify all thread created properly*/
 	for (i = 0; i < submit_queues; i++)
-		wake_up_process(session_data->conn_data[i]->conn_th);
+		wake_up_process(session_data->xnbd_conns[i]->conn_th);
 
 	return 0;
 
 cleanup2:
 	for (j = 0; j < i; j++) {
-		xnbd_destroy_conn_data(session_data->conn_data[j]);
-		session_data->conn_data[j] = NULL;
+		xnbd_destroy_xnbd_conn(session_data->xnbd_conns[j]);
+		session_data->xnbd_conns[j] = NULL;
 	}
-	kfree(session_data->conn_data);
+	kfree(session_data->xnbd_conns);
 
 cleanup1:
 	session = session_data->session;

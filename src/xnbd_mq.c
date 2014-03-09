@@ -167,7 +167,7 @@ static int xnbd_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 
 	xq = &xdev->queues[index];
 	pr_debug("%s called xq=%p\n", __func__, xq);
-	xq->conn_data = xdev->conn_data[index];
+	xq->xnbd_conn = xdev->xnbd_conns[index];
 	xq->xdev = xdev;
 	xq->queue_depth = xdev->queue_depth;
 	xq->piocb = kzalloc(sizeof(*xq->piocb), GFP_KERNEL);

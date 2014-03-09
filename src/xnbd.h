@@ -70,7 +70,7 @@
 #define XNBD_SECT_SIZE	    512
 #define XNBD_SECT_SHIFT	    ilog2(XNBD_SECT_SIZE)
 
-struct blk_connection_data {
+struct xnbd_connection {
 	struct xio_session  *session;
 	struct xio_context *ctx;
 	struct xio_connection *conn;
@@ -84,7 +84,7 @@ struct blk_connection_data {
 
 struct session_data {
 	struct xio_session	     *session;
-	struct blk_connection_data  **conn_data; /*array of submit_queues conn */
+	struct xnbd_connection	    **xnbd_conns;
 	char			      portal[MAX_PORTAL_NAME];
 	struct list_head	      list;
 	struct list_head	      devs_list; /* list of struct xnbd_file */
@@ -94,7 +94,7 @@ struct session_data {
 
 struct xnbd_queue {
 	unsigned int		     queue_depth;
-	struct blk_connection_data  *conn_data;
+	struct xnbd_connection	    *xnbd_conn;
 	struct raio_iocb	    *piocb;
 	struct xnbd_file	    *xdev; /* pointer to parent*/
 };
@@ -111,7 +111,7 @@ struct xnbd_file {
 	unsigned int		     queue_depth;
 	unsigned int		     nr_queues;
 	int			     index; /* drive idx */
-	struct blk_connection_data **conn_data; /* pointer to array of conn data */
+	struct xnbd_connection	    **xnbd_conns;
 };
 
 extern struct list_head g_session_data;
