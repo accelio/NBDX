@@ -106,7 +106,6 @@ struct xnbd_file {
 	char			     file_name[MAX_XNBD_DEV_NAME];
 	struct list_head	     list; /* next node in list of struct xnbd_file */
 	struct gendisk		    *disk;
-	spinlock_t		     lock; /* For mutual exclusion */
 	struct request_queue	    *queue; /* The device request queue */
 	struct xnbd_queue	    *queues;
 	unsigned int		     queue_depth;

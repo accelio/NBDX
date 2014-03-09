@@ -52,7 +52,6 @@ int xnbd_major;
 int xnbd_indexes; /* num of devices created*/
 int submit_queues;
 int hw_queue_depth = 64;
-static LIST_HEAD(xnbd_file_list);
 struct list_head g_session_data;
 struct mutex g_lock;
 
