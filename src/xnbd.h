@@ -82,7 +82,7 @@ struct xnbd_connection {
 	struct xio_msg *rsp;
 };
 
-struct session_data {
+struct xnbd_session {
 	struct xio_session	     *session;
 	struct xnbd_connection	    **xnbd_conns;
 	char			      portal[MAX_PORTAL_NAME];
@@ -114,7 +114,7 @@ struct xnbd_file {
 	struct xnbd_connection	    **xnbd_conns;
 };
 
-extern struct list_head g_session_data;
+extern struct list_head g_xnbd_sessions;
 extern struct mutex g_lock;
 extern int created_portals;
 extern int submit_queues;
@@ -126,9 +126,9 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 		  unsigned long len, int write, struct request *req,
 		  struct xnbd_queue *q);
 int xnbd_session_create(const char *portal);
-int xnbd_create_device(struct session_data *blk_session_data,
+int xnbd_create_device(struct xnbd_session *blk_xnbd_session,
 		       const char *xdev_name);
-int xnbd_destroy_device_by_name(struct session_data *session_data,
+int xnbd_destroy_device_by_name(struct xnbd_session *xnbd_session,
 		       const char *xdev_name);
 int xnbd_create_sysfs_files(void);
 void xnbd_destroy_sysfs_files(void);
@@ -140,9 +140,9 @@ int xnbd_register_block_device(struct xnbd_file *xnbd_file);
 void xnbd_unregister_block_device(struct xnbd_file *xnbd_file);
 int xnbd_setup_queues(struct xnbd_file *xdev);
 void xnbd_destroy_queues(struct xnbd_file *xdev);
-struct session_data *xnbd_session_data_find(struct list_head *s_data_list,
+struct xnbd_session *xnbd_xnbd_session_find(struct list_head *s_data_list,
 					    const char *host_name);
-void xnbd_session_destroy(struct session_data *session_data);
+void xnbd_session_destroy(struct xnbd_session *xnbd_session);
 
 #endif  /* XNBD_H */
 

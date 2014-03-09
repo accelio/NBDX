@@ -57,7 +57,7 @@ static ssize_t delete_store(struct kobject *kobj,
 			    const char *buf, size_t count)
 {
 	int i;
-	struct session_data *session_d;
+	struct xnbd_session *session_d;
 	ssize_t ret;
 
 	if (kstrtoint(buf, 10, &i)) {
@@ -71,9 +71,9 @@ static ssize_t delete_store(struct kobject *kobj,
 	}
 
 	mutex_lock(&g_lock);
-	session_d = xnbd_session_data_find(&g_session_data, kobj->name);
+	session_d = xnbd_xnbd_session_find(&g_xnbd_sessions, kobj->name);
 	if (!session_d) {
-		pr_err("%s: didn't find session_data, probably was removed\n", __func__);
+		pr_err("%s: didn't find xnbd_session, probably was removed\n", __func__);
 		ret = -ENOENT;
 		goto out;
 	}
@@ -102,12 +102,12 @@ static ssize_t remove_device_store(struct kobject *kobj,
 			    struct kobj_attribute *attr,
 			    const char *buf, size_t count)
 {
-	struct session_data *session_d;
+	struct xnbd_session *session_d;
 	char xdev_name[MAX_XNBD_DEV_NAME];
 	ssize_t ret;
 
 	mutex_lock(&g_lock);
-	session_d = xnbd_session_data_find(&g_session_data, kobj->name);
+	session_d = xnbd_xnbd_session_find(&g_xnbd_sessions, kobj->name);
 	if (!session_d) {
 		pr_err("%s: failed to find session data\n", __func__);
 		ret = -ENOENT;
@@ -141,12 +141,12 @@ static ssize_t device_store(struct kobject *kobj,
 			    struct kobj_attribute *attr,
 			    const char *buf, size_t count)
 {
-	struct session_data *session_d;
+	struct xnbd_session *session_d;
 	char xdev_name[MAX_XNBD_DEV_NAME];
 	ssize_t ret;
 
 	mutex_lock(&g_lock);
-	session_d = xnbd_session_data_find(&g_session_data, kobj->name);
+	session_d = xnbd_xnbd_session_find(&g_xnbd_sessions, kobj->name);
 	if (!session_d) {
 		pr_err("%s: failed to find session data\n", __func__);
 		ret = -ENOENT;
