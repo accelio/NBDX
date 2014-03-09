@@ -503,14 +503,12 @@ int xnbd_destroy_device_by_name(struct session_data *session_data,
 	return 0;
 }
 
-int xnbd_destroy_session_devices(struct session_data *session_data)
+static void xnbd_destroy_session_devices(struct session_data *session_data)
 {
 	struct xnbd_file *xdev, *tmp;
 
-	list_for_each_entry_safe(xdev, tmp, &session_data->devs_list, list) {
+	list_for_each_entry_safe(xdev, tmp, &session_data->devs_list, list)
 		xnbd_destroy_device(session_data, xdev);
-	}
-	return 0;
 }
 
 static int xnbd_connect_work(void *data)
