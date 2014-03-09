@@ -467,25 +467,11 @@ err_file:
 	return retval;
 }
 
-int xnbd_destroy_device_by_name(struct session_data *session_data,
-		const char *xdev_name)
+static void xnbd_destroy_device(struct session_data *session_data,
+				struct xnbd_file *xnbd_file)
 {
-	struct xnbd_file *xnbd_file;
+	pr_debug("%s\n", __func__);
 
-	pr_err("%s\n", __func__);
-	xnbd_file = xnbd_file_find(session_data, xdev_name);
-	if (!xnbd_file) {
-		pr_err("xnbd_file find failed\n");
-		return 1;
-	}
-
-	return xnbd_destroy_device(session_data, xnbd_file);
-}
-
-int xnbd_destroy_device(struct session_data *session_data,
-		struct xnbd_file *xnbd_file)
-{
-	pr_err("%s\n", __func__);
 	xnbd_unregister_block_device(xnbd_file);
 
 	xnbd_destroy_queues(xnbd_file);
@@ -498,9 +484,23 @@ int xnbd_destroy_device(struct session_data *session_data,
 	spin_unlock(&session_data->devs_lock);
 
 	kfree(xnbd_file);
+}
+
+int xnbd_destroy_device_by_name(struct session_data *session_data,
+		const char *xdev_name)
+{
+	struct xnbd_file *xnbd_file;
+
+	pr_debug("%s\n", __func__);
+
+	xnbd_file = xnbd_file_find(session_data, xdev_name);
+	if (!xnbd_file) {
+		pr_err("xnbd_file find failed\n");
+		return -ENOENT;
+	}
+	xnbd_destroy_device(session_data, xnbd_file);
 
 	return 0;
-
 }
 
 int xnbd_destroy_session_devices(struct session_data *session_data)

@@ -130,8 +130,6 @@ int xnbd_create_device(struct session_data *blk_session_data,
 		       const char *xdev_name);
 int xnbd_destroy_device_by_name(struct session_data *session_data,
 		       const char *xdev_name);
-int xnbd_destroy_device(struct session_data *session_data,
-			   struct xnbd_file *xdev_file);
 int xnbd_destroy_session_devices(struct session_data *session_data);
 int xnbd_create_sysfs_files(void);
 void xnbd_destroy_sysfs_files(void);
