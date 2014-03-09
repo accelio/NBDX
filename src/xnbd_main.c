@@ -577,7 +577,7 @@ static int xnbd_connect_work(void *data)
 /**
  * destroy xnbd_conn before waking up ktread task
  */
-static void xnbd_destroy_xnbd_conn(struct xnbd_connection *xnbd_conn)
+static void xnbd_destroy_conn(struct xnbd_connection *xnbd_conn)
 {
 	struct task_struct *task = xnbd_conn->conn_th;
 
@@ -671,7 +671,7 @@ int xnbd_session_create(const char *portal)
 
 cleanup2:
 	for (j = 0; j < i; j++) {
-		xnbd_destroy_xnbd_conn(xnbd_session->xnbd_conns[j]);
+		xnbd_destroy_conn(xnbd_session->xnbd_conns[j]);
 		xnbd_session->xnbd_conns[j] = NULL;
 	}
 	kfree(xnbd_session->xnbd_conns);
