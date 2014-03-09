@@ -71,15 +71,15 @@
 #define XNBD_SECT_SHIFT	    ilog2(XNBD_SECT_SIZE)
 
 struct xnbd_connection {
-	struct xio_session  *session;
-	struct xio_context *ctx;
-	struct xio_connection *conn;
-	struct task_struct *conn_th;
-	int cpu_id;
-	wait_queue_head_t wq;
-	int wq_flag;
-	struct xio_msg req;
-	struct xio_msg *rsp;
+	struct xio_session     *session;
+	struct xio_context     *ctx;
+	struct xio_connection  *conn;
+	struct task_struct     *conn_th;
+	int			cpu_id;
+	int			wq_flag;
+	struct xio_msg		req;
+	struct xio_msg	       *rsp;
+	wait_queue_head_t	wq;
 };
 
 struct xnbd_session {
