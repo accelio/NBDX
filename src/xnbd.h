@@ -87,7 +87,7 @@ struct session_data {
 	struct blk_connection_data  **conn_data; /*array of submit_queues conn */
 	char			      portal[MAX_PORTAL_NAME];
 	struct list_head	      list;
-	struct list_head	      drive_list; /* list of struct xnbd_file */
+	struct list_head	      devs_list; /* list of struct xnbd_file */
 	struct kobject		     *kobj;
 };
 

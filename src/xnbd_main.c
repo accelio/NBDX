@@ -416,7 +416,7 @@ int xnbd_create_device(struct session_data *blk_session_data,
 	}
 
 	sscanf(xdev_name, "%s", xnbd_file->file_name);
-	list_add(&xnbd_file->list, &blk_session_data->drive_list);
+	list_add(&xnbd_file->list, &blk_session_data->devs_list);
 	xnbd_file->index = xnbd_indexes++;
 	xnbd_file->nr_queues = submit_queues;
 	xnbd_file->queue_depth = hw_queue_depth;
@@ -470,7 +470,7 @@ int xnbd_destroy_device_by_name(struct session_data *session_data,
 	struct xnbd_file *xnbd_file;
 
 	pr_err("%s\n", __func__);
-	xnbd_file = xnbd_file_find(&session_data->drive_list, xdev_name);
+	xnbd_file = xnbd_file_find(&session_data->devs_list, xdev_name);
 	if (!xnbd_file) {
 		pr_err("xnbd_file find failed\n");
 		return 1;
@@ -502,7 +502,7 @@ int xnbd_destroy_session_devices(struct session_data *session_data)
 {
 	struct xnbd_file *xdev, *tmp;
 
-	list_for_each_entry_safe(xdev, tmp, &session_data->drive_list, list) {
+	list_for_each_entry_safe(xdev, tmp, &session_data->devs_list, list) {
 		xnbd_destroy_device(session_data, xdev);
 	}
 	return 0;
@@ -588,7 +588,7 @@ int xnbd_session_create(const char *portal)
 	if (!session_data->session)
 			goto cleanup;
 
-	INIT_LIST_HEAD(&session_data->drive_list);
+	INIT_LIST_HEAD(&session_data->devs_list);
 
 	mutex_lock(&g_lock);
 	session_data->kobj = xnbd_create_portal_files();
