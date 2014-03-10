@@ -224,6 +224,11 @@ static ssize_t add_portal_store(struct kobject *kobj,
 	char rdma[MAX_PORTAL_NAME] = "rdma://" ;
 	sscanf(strcat(rdma, buf), "%s", rdma);
 
+	if(xnbd_session_find_by_portal(&g_xnbd_sessions, rdma)) {
+		pr_err("Portal already exists: %s", buf);
+		return -EEXIST;
+	}
+
 	if (xnbd_session_create(rdma)) {
 		printk("Couldn't create new session with %s\n", rdma);
 		return -EINVAL;

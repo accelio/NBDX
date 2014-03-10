@@ -167,6 +167,24 @@ struct xnbd_session *xnbd_xnbd_session_find(struct list_head *s_data_list,
 	return ret;
 }
 
+struct xnbd_session *xnbd_session_find_by_portal(struct list_head *s_data_list,
+						 const char *portal)
+{
+	struct xnbd_session *pos;
+	struct xnbd_session *ret = NULL;
+
+	mutex_lock(&g_lock);
+	list_for_each_entry(pos, s_data_list, list) {
+		if (!strcmp(pos->portal, portal)) {
+			ret = pos;
+			break;
+		}
+	}
+	mutex_unlock(&g_lock);
+
+	return ret;
+}
+
 /*---------------------------------------------------------------------------*/
 /* on_submit_answer							     */
 /*---------------------------------------------------------------------------*/
