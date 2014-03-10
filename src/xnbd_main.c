@@ -255,6 +255,13 @@ static int on_session_event(struct xio_session *session,
 	       xio_session_event_str(event_data->event));
 
 	switch (event_data->event) {
+	case XIO_SESSION_CONNECTION_ESTABLISHED_EVENT:
+		pr_debug("%s: connection=%p established\n", __func__, conn);
+		if (atomic_dec_and_test(&xnbd_session->conns_count)) {
+			pr_debug("%s: last connection established\n", __func__);
+			complete(&xnbd_session->conns_wait);
+		}
+		break;
 	case XIO_SESSION_TEARDOWN_EVENT:
 		xnbd_session->session = NULL;
 		xio_session_destroy(session);
@@ -611,12 +618,16 @@ int xnbd_session_create(const char *portal)
 		goto cleanup1;
 	}
 
+	init_completion(&xnbd_session->conns_wait);
+	atomic_set(&xnbd_session->conns_count, 0);
+
 	for (i = 0; i < submit_queues; i++) {
 		xnbd_session->xnbd_conns[i] = kzalloc(sizeof(*xnbd_session->xnbd_conns[i]),
 							    GFP_KERNEL);
 		if (!xnbd_session->xnbd_conns[i]) {
 			goto cleanup2;
 	    }
+		atomic_inc(&xnbd_session->conns_count);
 		sprintf(name, "session thread %d", i);
 		xnbd_session->xnbd_conns[i]->session = xnbd_session->session;
 		xnbd_session->xnbd_conns[i]->cpu_id = i;
@@ -630,6 +641,9 @@ int xnbd_session_create(const char *portal)
 	/* kick all threads after verify all thread created properly*/
 	for (i = 0; i < submit_queues; i++)
 		wake_up_process(xnbd_session->xnbd_conns[i]->conn_th);
+
+	/* wait for all connections establishment to complete */
+	wait_for_completion(&xnbd_session->conns_wait);
 
 	return 0;
 

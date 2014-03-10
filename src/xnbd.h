@@ -90,6 +90,8 @@ struct xnbd_session {
 	struct list_head	      devs_list; /* list of struct xnbd_file */
 	spinlock_t		      devs_lock;
 	struct kobject		     *kobj;
+	struct completion	      conns_wait;
+	atomic_t		      conns_count;
 };
 
 struct xnbd_queue {
