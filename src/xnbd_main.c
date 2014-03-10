@@ -661,7 +661,9 @@ int xnbd_session_create(const char *portal)
 		wake_up_process(xnbd_session->xnbd_conns[i]->conn_th);
 
 	/* wait for all connections establishment to complete */
-	wait_for_completion(&xnbd_session->conns_wait);
+	if (!wait_for_completion_timeout(&xnbd_session->conns_wait,
+					 60 * HZ))
+		return 1;
 
 	return 0;
 
