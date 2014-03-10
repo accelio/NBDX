@@ -616,10 +616,8 @@ static int xnbd_create_conn(struct xnbd_session *xnbd_session, int cpu,
 
 int xnbd_session_create(const char *portal)
 {
-	struct xnbd_session	*xnbd_session;
-	struct xio_session *session;
-	int i,j;
-	int ret;
+	struct xnbd_session *xnbd_session;
+	int i, j, ret;
 
 	/* client session attributes */
 	struct xio_session_attr attr = {
@@ -630,17 +628,18 @@ int xnbd_session_create(const char *portal)
 
 	xnbd_session = kzalloc(sizeof(*xnbd_session), GFP_KERNEL);
 	if (!xnbd_session) {
-		printk("xnbd_session alloc failed\n");
-		return 1;
+		pr_err("failed to allocate xnbd session\n");
+		return -ENOMEM;
 	}
 
 	strcpy(xnbd_session->portal, portal);
-	/* connect to portal */
 	xnbd_session->session = xio_session_create(XIO_SESSION_CLIENT,
 		     &attr, xnbd_session->portal, 0, 0, xnbd_session);
-
-	if (!xnbd_session->session)
-			goto cleanup;
+	if (!xnbd_session->session) {
+		pr_err("failed to create xio session\n");
+		ret = -ENOMEM;
+		goto err_free_session;
+	}
 
 	INIT_LIST_HEAD(&xnbd_session->devs_list);
 	spin_lock_init(&xnbd_session->devs_lock);
@@ -649,7 +648,8 @@ int xnbd_session_create(const char *portal)
 	xnbd_session->kobj = xnbd_create_portal_files();
 	if (!xnbd_session->kobj) {
 		mutex_unlock(&g_lock);
-		goto cleanup1;
+		ret = -ENOMEM;
+		goto err_destroy_session;
 	}
 	list_add(&xnbd_session->list, &g_xnbd_sessions);
 	created_portals++;
@@ -658,8 +658,9 @@ int xnbd_session_create(const char *portal)
 	xnbd_session->xnbd_conns = kzalloc(submit_queues * sizeof(*xnbd_session->xnbd_conns),
 					  GFP_KERNEL);
 	if (!xnbd_session->xnbd_conns) {
-		printk("xnbd_session->xnbd_conn alloc failed\n");
-		goto cleanup1;
+		pr_err("failed to allocate xnbd connections array\n");
+		ret = -ENOMEM;
+		goto err_destroy_portal;
 	}
 
 	init_completion(&xnbd_session->conns_wait);
@@ -669,34 +670,35 @@ int xnbd_session_create(const char *portal)
 		ret = xnbd_create_conn(xnbd_session, i,
 				       &xnbd_session->xnbd_conns[i]);
 		if (ret)
-			goto cleanup2;
+			goto err_destroy_conns;
 	}
 
 	/* wait for all connections establishment to complete */
 	if (!wait_for_completion_timeout(&xnbd_session->conns_wait,
 					 60 * HZ)) {
 		pr_err("connection establishment timeout expired\n");
-		goto cleanup2;
+		goto err_destroy_conns;
 	}
 
 	return 0;
 
-cleanup2:
+err_destroy_conns:
 	for (j = 0; j < i; j++) {
 		xnbd_destroy_conn(xnbd_session->xnbd_conns[j]);
 		xnbd_session->xnbd_conns[j] = NULL;
 	}
 	kfree(xnbd_session->xnbd_conns);
-
-cleanup1:
-	session = xnbd_session->session;
-	xnbd_session->session = NULL;
-	xio_session_destroy(session);
-
-cleanup:
+err_destroy_portal:
+	xnbd_destroy_portal_file(xnbd_session->kobj);
+err_destroy_session:
+	mutex_lock(&g_lock);
+	list_del(&xnbd_session->list);
+	mutex_unlock(&g_lock);
+	xio_session_destroy(xnbd_session->session);
+err_free_session:
 	kfree(xnbd_session);
 
-	return 1;
+	return ret;
 
 }
 
