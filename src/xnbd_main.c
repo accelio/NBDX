@@ -151,8 +151,8 @@ static struct xnbd_file *xnbd_file_find(struct xnbd_session *xnbd_session,
 	return ret;
 }
 
-struct xnbd_session *xnbd_xnbd_session_find(struct list_head *s_data_list,
-					const char *host_name)
+struct xnbd_session *xnbd_session_find(struct list_head *s_data_list,
+                                       const char *host_name)
 {
 	struct xnbd_session *pos;
 	struct xnbd_session *ret = NULL;

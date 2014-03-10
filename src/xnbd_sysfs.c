@@ -71,7 +71,7 @@ static ssize_t delete_store(struct kobject *kobj,
 	}
 
 	mutex_lock(&g_lock);
-	session_d = xnbd_xnbd_session_find(&g_xnbd_sessions, kobj->name);
+	session_d = xnbd_session_find(&g_xnbd_sessions, kobj->name);
 	if (!session_d) {
 		pr_err("%s: didn't find xnbd_session, probably was removed\n", __func__);
 		ret = -ENOENT;
@@ -107,7 +107,7 @@ static ssize_t remove_device_store(struct kobject *kobj,
 	ssize_t ret;
 
 	mutex_lock(&g_lock);
-	session_d = xnbd_xnbd_session_find(&g_xnbd_sessions, kobj->name);
+	session_d = xnbd_session_find(&g_xnbd_sessions, kobj->name);
 	if (!session_d) {
 		pr_err("%s: failed to find session data\n", __func__);
 		ret = -ENOENT;
@@ -146,7 +146,7 @@ static ssize_t device_store(struct kobject *kobj,
 	ssize_t ret;
 
 	mutex_lock(&g_lock);
-	session_d = xnbd_xnbd_session_find(&g_xnbd_sessions, kobj->name);
+	session_d = xnbd_session_find(&g_xnbd_sessions, kobj->name);
 	if (!session_d) {
 		pr_err("%s: failed to find session data\n", __func__);
 		ret = -ENOENT;
