@@ -588,12 +588,38 @@ static void xnbd_destroy_conn(struct xnbd_connection *xnbd_conn)
 
 }
 
+static int xnbd_create_conn(struct xnbd_session *xnbd_session, int cpu,
+			    struct xnbd_connection **conn)
+{
+	struct xnbd_connection *xnbd_conn;
+	char name[50];
+
+	xnbd_conn = kzalloc(sizeof(*xnbd_conn), GFP_KERNEL);
+	if (!xnbd_conn) {
+		pr_err("failed to allocate xnbd_conn");
+		return -ENOMEM;
+	}
+
+	sprintf(name, "session thread %d", cpu);
+	xnbd_conn->session = xnbd_session->session;
+	xnbd_conn->cpu_id = cpu;
+
+	pr_debug("opening thread on cpu %d\n", cpu);
+	xnbd_conn->conn_th = kthread_create(xnbd_connect_work, xnbd_conn, name);
+	kthread_bind(xnbd_conn->conn_th, cpu);
+	atomic_inc(&xnbd_session->conns_count);
+	wake_up_process(xnbd_conn->conn_th);
+	*conn = xnbd_conn;
+
+	return 0;
+}
+
 int xnbd_session_create(const char *portal)
 {
 	struct xnbd_session	*xnbd_session;
 	struct xio_session *session;
 	int i,j;
-	char name[50];
+	int ret;
 
 	/* client session attributes */
 	struct xio_session_attr attr = {
@@ -640,25 +666,11 @@ int xnbd_session_create(const char *portal)
 	atomic_set(&xnbd_session->conns_count, 0);
 
 	for (i = 0; i < submit_queues; i++) {
-		xnbd_session->xnbd_conns[i] = kzalloc(sizeof(*xnbd_session->xnbd_conns[i]),
-							    GFP_KERNEL);
-		if (!xnbd_session->xnbd_conns[i]) {
+		ret = xnbd_create_conn(xnbd_session, i,
+				       &xnbd_session->xnbd_conns[i]);
+		if (ret)
 			goto cleanup2;
-	    }
-		atomic_inc(&xnbd_session->conns_count);
-		sprintf(name, "session thread %d", i);
-		xnbd_session->xnbd_conns[i]->session = xnbd_session->session;
-		xnbd_session->xnbd_conns[i]->cpu_id = i;
-		printk("opening thread on cpu %d\n", i);
-		xnbd_session->xnbd_conns[i]->conn_th = kthread_create(xnbd_connect_work,
-								     xnbd_session->xnbd_conns[i],
-								     name);
-		kthread_bind(xnbd_session->xnbd_conns[i]->conn_th, i);
 	}
-
-	/* kick all threads after verify all thread created properly*/
-	for (i = 0; i < submit_queues; i++)
-		wake_up_process(xnbd_session->xnbd_conns[i]->conn_th);
 
 	/* wait for all connections establishment to complete */
 	if (!wait_for_completion_timeout(&xnbd_session->conns_wait,
