@@ -154,6 +154,12 @@ static ssize_t device_store(struct kobject *kobj,
 	}
 
 	sscanf(buf, "%s", xdev_name);
+	if(xnbd_file_find(session_d, xdev_name)) {
+		pr_err("Device already exists: %s", xdev_name);
+		ret = -EEXIST;
+		goto out;
+	}
+
 	ret = xnbd_create_device(session_d, xdev_name);
 	if (ret) {
 		pr_err("failed to open file=%s\n", xdev_name);

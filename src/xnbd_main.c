@@ -133,8 +133,8 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 	return 0;
 }
 
-static struct xnbd_file *xnbd_file_find(struct xnbd_session *xnbd_session,
-					const char *xdev_name)
+struct xnbd_file *xnbd_file_find(struct xnbd_session *xnbd_session,
+				 const char *xdev_name)
 {
 	struct xnbd_file *pos;
 	struct xnbd_file *ret = NULL;

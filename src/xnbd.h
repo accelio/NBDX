@@ -144,6 +144,8 @@ int xnbd_setup_queues(struct xnbd_file *xdev);
 void xnbd_destroy_queues(struct xnbd_file *xdev);
 struct xnbd_session *xnbd_session_find(struct list_head *s_data_list,
 					    const char *host_name);
+struct xnbd_file *xnbd_file_find(struct xnbd_session *xnbd_session,
+				 const char *name);
 struct xnbd_session *xnbd_session_find_by_portal(struct list_head *s_data_list,
 						 const char *portal);
 void xnbd_session_destroy(struct xnbd_session *xnbd_session);
