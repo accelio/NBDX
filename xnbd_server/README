@@ -1,0 +1,184 @@
+Accelio - The Open Source I/O, Message, and RPC Acceleration Library
+
+Rev 1.0
+
+
+libxio
+------
+
+Accelio is an Open Source high-performance, asynchronous, reliable messaging and Remote
+Procedure Call (RPC) library. Accelio optimizes hardware acceleration for Remote Direct Memory
+Access (RDMA), TCP/IP and shared-memory. Accelio maximizes message and CPU parallelism,
+while minimizing CPU contention and locking. The parallel and asynchronous
+architecture, lockless design, and zero data copy mechanism provide unparalleled transaction per
+second and bandwidth performance, as well as lower latency and CPU overhead. Accelio guarantees
+end-to-end transaction delivery and execution, and it supports a transactional request-reply
+communication model.
+
+Accelio addresses challenges of scale-out and virtualized environments by providing built-in
+multi-pathing, live session redirection/migration, and service or storage clustering. Managed as a
+modular Open Source project, Accelio extends seamlessly to new functionalities, transport
+implementations, and services.
+
+libxio (a.k.a lib accelio) is a lightweight messaging library layered on top of RDMA. The library
+provides asynchronous messaging designed for zero copy messaging and lock free scalability.
+
+
+Accelio Prerequisites
+----------------------
+
+Prior to installing the Accelio package, the following prerequisites are required:
+
+
+RedHat (RHEL 6.4 and above)
+
+	yum groupinstall "Infiniband Support"
+	yum install libtool autoconf automake
+	yum install infiniband-diags perftest libibverbs-utils librdmacm-utils
+	yum install librdmacm-devel libibverbs-devel numactl numactl-devel libaio-devel
+
+
+Ubuntu (Ubuntu 13.04 and above)
+
+	apt-get install libtool autoconf automake build-essential
+	apt-get install ibverbs-utils rdmacm-utils infiniband-diags perftest
+	apt-get install librdmacm-dev libibverbs-dev numactl libnuma-dev libaio-dev
+
+
+MLNX_OFED
+
+	Mellanox OFED pacakage is optional and recommended
+	look for latest OFED packages at:
+	http://www.mellanox.com/page/products_dyn?product_family=26
+
+
+Building and installation
+--------------------------
+
+to build the library follow the following steps:
+  - run ./autogen.sh
+  - run ./configure
+  - run make
+  - follow examples in ./examples/
+
+Examples
+--------
+
+The following are examples provided with the Accelio package. Each example contains simple
+scripts showing how to run the example from the local directory.
+
+	1. hello world - a minimal single process, single thread "hello world"
+			 server and client.
+
+	2. hello world mt - a multi-threaded client, and multi-threaded server
+			    demonstrating how to scale and work in multi
+			    threaded environment.
+
+	3. R-AIO	 -  Linux's Remote AIO API over libxio. The example contains
+			    a library, a server application and simple client.
+			    the client demonstrates reading of files from the server.
+			    the interface to the library is libraio.h.
+
+	4. fio		 -  a new ioengine for fio application demonstrating the use of
+			    libraio. The fio application is a benchmark application
+			    allowing multi-threaded/multi-processed benchmarks of io devices.
+			    The application is used to provide a independent benchmark for the
+			    libxio performance.
+
+
+Configuration options:
+----------------------
+
+	1. Huge pages - libxio allocates huge pages for its internal buffers
+			and memory. The user should enable huge pages to gain
+			best performance.
+			for enabling huge pages:
+				1. login as root
+				2. run echo 3000 > /proc/sys/vm/nr_hugepages
+
+
+	2. fio -	To build and use fio example, fio sources are required.
+				1. Download the source code:
+
+				git clone git://git.kernel.org/pub/scm/linux/kernel/git/axboe/fio.git
+
+				2. Export FIO_ROOT environment variable pointing to fio sources:
+
+				export FIO_ROOT=/home/fio
+
+				3. Build the fio example:
+
+				./configure --enable-fio-build=yes FIO_ROOT=/home/fio
+
+
+Building blocks:
+----------------
+
+the libxio provides several primitives that enables it user to quickly
+develop event driven network servers.
+
+	2. xio_context -  xio_context is the event dispatcher of Accelio used to create a context on each
+			  thread that handles messaging.
+			  On the client side, connections are created per each session and with the corresponding
+			  context.
+			  On the server side, each server thread is bound with one context.
+			  The context can be used to add or remove private file descriptors that eventually
+			  are handled by the Accelio internal dispatcher.
+			  Once the context is created and initiated, call xio_context_run_loop to run
+		          the dispatcher. To stop this function, call xio_context_stop_loop.
+
+			  To use Accelio with an external dispatcher, call
+			  xio_context_get_poll_params to get a single Accelio file descriptor.
+
+
+	3. xio_session - is a central concept in libxio. A session is a semi-permanent interactive
+			 information interchange, also known as a dialog, a conversation or a
+			 meeting, between two or more communicating devices. A session is set up or
+			 established at a certain point in time, and torn down at a later point in time. Once
+			 the session is established, messages are sent to the remote peer.
+
+			 Note that requests and responses are bi-directional: client/server initiates a
+			 request and server/client responds to the request.
+
+			 An established session is the basic requirement to perform a connection-oriented
+			 communication. A single xio_session may be associated with multiple
+			 xio_connection. libxio sessions are created in a URL form as follow:
+			 "<scheme>://<address>:<port>/resource"
+
+			 A session may represent a remote resource that the client requests from the
+			 remote server. Upon opening a session, the user provides a structure of callbacks
+			 that is triggered upon network events, such as session events, arriving messages,
+			 errors etc.
+
+
+	4. xio_connection - xio_connection is handled on the requester's side and enables the peer to send a
+			 message to a remote peer. The application typically opens one connection per
+			 session per thread. For example, a session maintained by 4 worker threads,
+			 should have a connection per each thread.
+
+
+	5. xio_server - The server object represents the passive side object. The server is created by
+			calling xio_bind.
+
+			The following are types of xio servers functions:
+
+			The acceptor - accepts incoming connections, and handles them. It may forward an
+			incoming connection to a back-end worker thread or redirect it to another server, and
+			it may also reject or accept the connection.
+
+			The worker thread - works on the background and parallels the workload upon all
+			cores by scaling out the application.
+
+			A server can be a mixture of the acceptor and the worker, meaning the same
+			server accepts the connection and processes the message requests.
+
+
+	6. xio_mr -	The xio_mr represents memory region registered for RDMA operations.
+			Registering memory allows the RDMA device to read and write data to this
+			memory. Since the registration is a long process, memory registration is not
+			recommended in the data path, when fast response is required.
+
+			Memory can be registered in one of the following models:
+			The application registers its buffers
+			The library registers the buffers and allows the application to access them directly.
+
