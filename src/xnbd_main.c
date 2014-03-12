@@ -501,9 +501,6 @@ static void xnbd_destroy_device(struct xnbd_session *xnbd_session,
 
 	xnbd_destroy_queues(xnbd_file);
 
-	/* num of active files decreased */
-	xnbd_indexes--;
-
 	spin_lock(&xnbd_session->devs_lock);
 	list_del(&xnbd_file->list);
 	spin_unlock(&xnbd_session->devs_lock);
