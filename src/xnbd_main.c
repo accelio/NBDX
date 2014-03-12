@@ -443,6 +443,7 @@ int xnbd_create_device(struct xnbd_session *xnbd_session,
 
 	sscanf(xdev_name, "%s", xnbd_file->file_name);
 	xnbd_file->index = xnbd_indexes++;
+	sprintf(xnbd_file->dev_name, "xnbd%d", xnbd_file->index);
 	xnbd_file->nr_queues = submit_queues;
 	xnbd_file->queue_depth = hw_queue_depth;
 	xnbd_file->xnbd_conns = xnbd_session->xnbd_conns;

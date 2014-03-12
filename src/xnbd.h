@@ -113,6 +113,7 @@ struct xnbd_file {
 	unsigned int		     queue_depth;
 	unsigned int		     nr_queues;
 	int			     index; /* drive idx */
+	char			     dev_name[MAX_XNBD_DEV_NAME];
 	struct xnbd_connection	    **xnbd_conns;
 };
 

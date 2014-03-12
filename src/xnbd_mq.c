@@ -286,7 +286,7 @@ int xnbd_register_block_device(struct xnbd_file *xnbd_file)
 	blk_queue_physical_block_size(xnbd_file->queue, XNBD_SECT_SIZE);
 	sector_div(size, XNBD_SECT_SIZE);
 	set_capacity(xnbd_file->disk, size);
-	sprintf(xnbd_file->disk->disk_name, "xnbd%d", xnbd_file->index);
+	sscanf(xnbd_file->dev_name, "%s", xnbd_file->disk->disk_name);
 	add_disk(xnbd_file->disk);
 
 	return 0;
