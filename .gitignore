@@ -13,6 +13,13 @@ config.*
 configure
 .tmp_versions*
 autom4te.cache
+aclocal.m4
+compile
+libtool
+ltmain.sh
+version.c
+xnbd_server
+*.deps*
 
 # Version control
 *cscope*
