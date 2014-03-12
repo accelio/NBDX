@@ -63,6 +63,36 @@ static void msg_reset(struct xio_msg *msg)
 	msg->out.header.iov_len = 0;
 }
 
+static inline int xnbd_set_device_state(struct xnbd_file *xdev,
+					enum xnbd_dev_state state)
+{
+	int ret = 0;
+
+	spin_lock(&xdev->state_lock);
+	switch (state) {
+	case DEVICE_OPENNING:
+		if (xdev->state == DEVICE_OFFLINE ||
+		    xdev->state == DEVICE_RUNNING) {
+			ret = -EINVAL;
+			goto out;
+		}
+		xdev->state = state;
+		break;
+	case DEVICE_RUNNING:
+		xdev->state = state;
+		break;
+	case DEVICE_OFFLINE:
+		xdev->state = state;
+		break;
+	default:
+		pr_err("Unknown device state %d\n", state);
+		ret = -EINVAL;
+	}
+out:
+	spin_unlock(&xdev->state_lock);
+	return ret;
+}
+
 int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 		  unsigned long len, int write, struct request *req,
 		  struct xnbd_queue *q)
@@ -198,6 +228,13 @@ static void on_submit_answer(struct xnbd_connection *xnbd_conn,
 			io_u->ans.ret, io_u->ans.ret_errno);
 
 	ret = io_u->ans.ret;
+	if (ret) {
+		struct xnbd_file *xdev = io_u->breq->rq_disk->private_data;
+
+		pr_err("error response on xdev %s ret=%d\n", xdev->dev_name,
+							     io_u->ans.ret);
+		xnbd_set_device_state(xdev, DEVICE_OFFLINE);
+	}
 
 	spin_lock(&xnbd_conn->iou_lock);
 	list_add_tail(&io_u->list, &xnbd_conn->iou_pool);
@@ -302,6 +339,32 @@ struct xio_session_ops xnbd_ses_ops = {
 	.on_msg				=  on_response,
 	.on_msg_error			=  NULL
 };
+
+const char *xnbd_device_state_str(struct xnbd_file *dev)
+{
+	char *state;
+
+	spin_lock(&dev->state_lock);
+	switch (dev->state) {
+	case 0:
+		state = "Initial state";
+		break;
+	case DEVICE_OPENNING:
+		state = "openning";
+		break;
+	case DEVICE_RUNNING:
+		state = "running";
+		break;
+	case DEVICE_OFFLINE:
+		state = "offline";
+		break;
+	default:
+		state = "unknown device state";
+	}
+	spin_unlock(&dev->state_lock);
+
+	return state;
+}
 
 static int xnbd_setup_remote_device(struct xnbd_session *xnbd_session,
 				    struct xnbd_file *xnbd_file)
@@ -421,7 +484,7 @@ static int xnbd_open_remote_device(struct xnbd_session *xnbd_session,
 }
 
 int xnbd_create_device(struct xnbd_session *xnbd_session,
-		       const char *xdev_name)
+					   const char *xdev_name, struct kobject *p_kobj)
 {
 	struct xnbd_file *xnbd_file;
 	int retval;
@@ -438,6 +501,23 @@ int xnbd_create_device(struct xnbd_session *xnbd_session,
 	xnbd_file->nr_queues = submit_queues;
 	xnbd_file->queue_depth = XNBD_QUEUE_DEPTH;
 	xnbd_file->xnbd_conns = xnbd_session->xnbd_conns;
+
+	spin_lock_init(&xnbd_file->state_lock);
+	retval = xnbd_set_device_state(xnbd_file, DEVICE_OPENNING);
+	if (retval) {
+		pr_err("device %s: Illegal state transition %s -> openning\n",
+		       xnbd_file->dev_name,
+		       xnbd_device_state_str(xnbd_file));
+		goto err_file;
+	}
+
+	retval = xnbd_create_device_files(p_kobj, xnbd_file->dev_name, &xnbd_file->kobj);
+	if (retval) {
+		pr_err("failed to create sysfs for device %s\n",
+		       xnbd_file->dev_name);
+		goto err_sysfs;
+	}
+
 	spin_lock(&xnbd_session->devs_lock);
 	list_add(&xnbd_file->list, &xnbd_session->devs_list);
 	spin_unlock(&xnbd_session->devs_lock);
@@ -475,17 +555,20 @@ int xnbd_create_device(struct xnbd_session *xnbd_session,
 		goto err_queues;
 	}
 
+	xnbd_set_device_state(xnbd_file, DEVICE_RUNNING);
+
 	return 0;
 
 err_queues:
 	xnbd_destroy_queues(xnbd_file);
 err_file:
 	kfree(xnbd_file);
+err_sysfs:
 	return retval;
 }
 
-static void xnbd_destroy_device(struct xnbd_session *xnbd_session,
-				struct xnbd_file *xnbd_file)
+void xnbd_destroy_device(struct xnbd_session *xnbd_session,
+                         struct xnbd_file *xnbd_file)
 {
 	pr_debug("%s\n", __func__);
 
@@ -497,32 +580,16 @@ static void xnbd_destroy_device(struct xnbd_session *xnbd_session,
 	list_del(&xnbd_file->list);
 	spin_unlock(&xnbd_session->devs_lock);
 
-	kfree(xnbd_file);
-}
-
-int xnbd_destroy_device_by_name(struct xnbd_session *xnbd_session,
-		const char *xdev_name)
-{
-	struct xnbd_file *xnbd_file;
-
-	pr_debug("%s\n", __func__);
-
-	xnbd_file = xnbd_file_find(xnbd_session, xdev_name);
-	if (!xnbd_file) {
-		pr_err("xnbd_file find failed\n");
-		return -ENOENT;
-	}
-	xnbd_destroy_device(xnbd_session, xnbd_file);
-
-	return 0;
 }
 
 static void xnbd_destroy_session_devices(struct xnbd_session *xnbd_session)
 {
 	struct xnbd_file *xdev, *tmp;
 
-	list_for_each_entry_safe(xdev, tmp, &xnbd_session->devs_list, list)
+	list_for_each_entry_safe(xdev, tmp, &xnbd_session->devs_list, list) {
 		xnbd_destroy_device(xnbd_session, xdev);
+		xnbd_destroy_kobj(&xdev->kobj);
+	}
 }
 
 static int xnbd_connect_work(void *data)
@@ -741,7 +808,7 @@ err_destroy_conns:
 	}
 	kfree(xnbd_session->xnbd_conns);
 err_destroy_portal:
-	xnbd_destroy_portal_file(xnbd_session->kobj);
+	xnbd_destroy_kobj(xnbd_session->kobj);
 err_destroy_session:
 	mutex_lock(&g_lock);
 	list_del(&xnbd_session->list);
@@ -788,7 +855,7 @@ static void __exit xnbd_cleanup_module(void)
 
 	mutex_lock(&g_lock);
 	list_for_each_entry_safe(xnbd_session, tmp, &g_xnbd_sessions, list) {
-		xnbd_destroy_portal_file(xnbd_session->kobj);
+		xnbd_destroy_kobj(xnbd_session->kobj);
 		xnbd_session_destroy(xnbd_session);
 	}
 	mutex_unlock(&g_lock);

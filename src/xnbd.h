@@ -71,6 +71,12 @@
 #define XNBD_SECT_SHIFT	    ilog2(XNBD_SECT_SIZE)
 #define XNBD_QUEUE_DEPTH    64
 
+enum xnbd_dev_state {
+	DEVICE_OPENNING = 1,
+	DEVICE_RUNNING,
+	DEVICE_OFFLINE
+};
+
 struct xnbd_connection {
 	struct xio_session     *session;
 	struct xio_context     *ctx;
@@ -118,6 +124,9 @@ struct xnbd_file {
 	int			     index; /* drive idx */
 	char			     dev_name[MAX_XNBD_DEV_NAME];
 	struct xnbd_connection	    **xnbd_conns;
+	struct kobject		    kobj;
+	spinlock_t		     state_lock;
+	enum xnbd_dev_state	     state;
 };
 
 extern struct list_head g_xnbd_sessions;
@@ -132,13 +141,15 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 		  struct xnbd_queue *q);
 int xnbd_session_create(const char *portal);
 int xnbd_create_device(struct xnbd_session *blk_xnbd_session,
-		       const char *xdev_name);
-int xnbd_destroy_device_by_name(struct xnbd_session *xnbd_session,
-		       const char *xdev_name);
+		       const char *xdev_name, struct kobject *p_kobj);
+void xnbd_destroy_device(struct xnbd_session *xnbd_session,
+                         struct xnbd_file *xnbd_file);
 int xnbd_create_sysfs_files(void);
 void xnbd_destroy_sysfs_files(void);
 struct kobject* xnbd_create_portal_files(void);
-void xnbd_destroy_portal_file(struct kobject *kobj);
+int xnbd_create_device_files(struct kobject *p_kobj,
+                             const char *dev_name, struct kobject *kobj);
+void xnbd_destroy_kobj(struct kobject *kobj);
 int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
 		    unsigned long long *len);
 int xnbd_register_block_device(struct xnbd_file *xnbd_file);
@@ -152,6 +163,7 @@ struct xnbd_file *xnbd_file_find(struct xnbd_session *xnbd_session,
 struct xnbd_session *xnbd_session_find_by_portal(struct list_head *s_data_list,
 						 const char *portal);
 void xnbd_session_destroy(struct xnbd_session *xnbd_session);
+const char* xnbd_device_state_str(struct xnbd_file *dev);
 
 #endif  /* XNBD_H */
 
