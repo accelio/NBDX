@@ -39,13 +39,13 @@ Install xnbd by following steps:
 4. HOWTO
 ========
 
-The following example creates block device vs. remote raio server using Accelio
+The following example creates block device vs. remote xnbd server using Accelio
 transport services.
 
-	1. raio server steps:
+	1. xnbd server steps:
 		- create a file that would be exposed as a block device to xnbd client
 		  at <device_path>
-		- run ./raio_server <server_ip> <port>
+		- run ./xnbd_server <server_ip> <port>
 
 	2. xnbd client steps:
 		$ modprobe xnbd
