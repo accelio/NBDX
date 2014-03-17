@@ -697,13 +697,12 @@ int xnbd_session_create(const char *portal)
 	INIT_LIST_HEAD(&xnbd_session->devs_list);
 	spin_lock_init(&xnbd_session->devs_lock);
 
-	mutex_lock(&g_lock);
 	xnbd_session->kobj = xnbd_create_portal_files();
 	if (!xnbd_session->kobj) {
-		mutex_unlock(&g_lock);
 		ret = -ENOMEM;
 		goto err_destroy_session;
 	}
+	mutex_lock(&g_lock);
 	list_add(&xnbd_session->list, &g_xnbd_sessions);
 	created_portals++;
 	mutex_unlock(&g_lock);
