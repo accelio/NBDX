@@ -69,6 +69,7 @@
 #define SUPPORTED_PORTALS   5
 #define XNBD_SECT_SIZE	    512
 #define XNBD_SECT_SHIFT	    ilog2(XNBD_SECT_SIZE)
+#define XNBD_QUEUE_DEPTH    64
 
 struct xnbd_connection {
 	struct xio_session     *session;
@@ -80,6 +81,8 @@ struct xnbd_connection {
 	struct xio_msg		req;
 	struct xio_msg	       *rsp;
 	wait_queue_head_t	wq;
+	struct list_head	iou_pool;
+	spinlock_t		iou_lock;
 };
 
 struct xnbd_session {
@@ -123,7 +126,6 @@ extern int created_portals;
 extern int submit_queues;
 extern int xnbd_major;
 extern int xnbd_indexes;
-extern int hw_queue_depth;
 
 int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 		  unsigned long len, int write, struct request *req,

@@ -106,6 +106,7 @@ struct raio_io_u {
 	int				res;
 	int				res2;
 	struct raio_answer		ans;
+	struct list_head		list;
 
 	char				req_hdr[512];
 };

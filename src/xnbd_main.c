@@ -51,7 +51,6 @@ int created_portals = 0;
 int xnbd_major;
 int xnbd_indexes; /* num of devices created*/
 int submit_queues;
-int hw_queue_depth = 64;
 struct list_head g_xnbd_sessions;
 struct mutex g_lock;
 
@@ -68,62 +67,49 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 		  unsigned long len, int write, struct request *req,
 		  struct xnbd_queue *q)
 {
-	struct raio_io_u		*io_u;
+	struct raio_io_u *io_u;
 	int cpu, retval = 0;
 
 	pr_debug("%s called and req=%p\n", __func__, req);
-	io_u = kzalloc(sizeof(*io_u), GFP_KERNEL);
-	if (!io_u) {
-		pr_err("io_u alloc fail\n");
-		return -1;
-	}
+
+	spin_lock(&q->xnbd_conn->iou_lock);
+	io_u = list_first_entry(&q->xnbd_conn->iou_pool,
+				struct raio_io_u, list);
+	list_del(&io_u->list);
+	spin_unlock(&q->xnbd_conn->iou_lock);
 	msg_reset(&io_u->req);
 
-	if (write) {
-		raio_prep_pwrite(q->piocb, xdev->fd, start);
-	}
+	if (write)
+		raio_prep_pwrite(io_u->iocb, xdev->fd, start);
 	else
-		raio_prep_pread(q->piocb, xdev->fd, start);
-
-	if (!io_u->req.out.header.iov_base) {
-		io_u->req.out.header.iov_base = kzalloc(SUBMIT_BLOCK_SIZE +
-				sizeof(uint32_t) + sizeof(struct raio_command), GFP_KERNEL);
-		if (!io_u->req.out.header.iov_base) {
-			pr_err("io_u->req.out.header.iov_base alloc fail\n");
-			return -1;
-		}
-
-	}
+		raio_prep_pread(io_u->iocb, xdev->fd, start);
 
 	pr_debug("%s,%d: start=0x%lx, len=0x%lx opcode=%d\n",
-		 __func__, __LINE__, start, len, q->piocb->raio_lio_opcode);
+		 __func__, __LINE__, start, len, io_u->iocb->raio_lio_opcode);
 
-	if (q->piocb->raio_lio_opcode == RAIO_CMD_PWRITE) {
+	if (io_u->iocb->raio_lio_opcode == RAIO_CMD_PWRITE) {
 		io_u->req.in.data_iovlen  = 0;
 		retval = xnbd_rq_map_iov(req, &io_u->req.out,
-				&q->piocb->u.c.nbytes);
+					 &io_u->iocb->u.c.nbytes);
 		if (retval) {
 			pr_err("failed to map io vec\n");
-			kfree(io_u);
 			return retval;
 		}
 	} else {
 		io_u->req.out.data_iovlen = 0;
 		retval = xnbd_rq_map_iov(req, &io_u->req.in,
-				&q->piocb->u.c.nbytes);
+					 &io_u->iocb->u.c.nbytes);
 		if (retval) {
 			pr_err("failed to map io vec\n");
-			kfree(io_u);
 			return retval;
 		}
 	}
 
-	pack_submit_command(q->piocb, 1, io_u->req.out.header.iov_base,
+	pack_submit_command(io_u->iocb, 1, io_u->req.out.header.iov_base,
 			    &io_u->req.out.header.iov_len);
 
 	io_u->req.user_context = io_u;
-	io_u->iocb = q->piocb;
-	io_u->breq = req; //needed for on answer to do blk_mq_end_io(breq, 0);
+	io_u->breq = req;
 
 	pr_debug("sending req on cpu=%d\n", q->xnbd_conn->cpu_id);
 	cpu = get_cpu();
@@ -188,13 +174,14 @@ struct xnbd_session *xnbd_session_find_by_portal(struct list_head *s_data_list,
 /*---------------------------------------------------------------------------*/
 /* on_submit_answer							     */
 /*---------------------------------------------------------------------------*/
-static void on_submit_answer(struct xio_msg *rsp)
+static void on_submit_answer(struct xnbd_connection *xnbd_conn,
+			     struct xio_msg *rsp)
 {
-	struct raio_io_u	*io_u;
+	struct raio_io_u *io_u;
 	struct request *breq;
+	int ret;
 
 	io_u = rsp->user_context;
-
 	io_u->rsp = rsp;
 	breq = io_u->breq;
 
@@ -206,14 +193,18 @@ static void on_submit_answer(struct xio_msg *rsp)
 	unpack_u32(&io_u->ans.data_len,
 	unpack_u32(&io_u->ans.command,
 		   io_u->rsp->in.header.iov_base))))));
-
-
 	pr_debug("fd=%d, res=%x, res2=%x, ans.ret=%d, ans.ret_errno=%d\n",
 			io_u->iocb->raio_fildes, io_u->res, io_u->res2,
 			io_u->ans.ret, io_u->ans.ret_errno);
 
-	if (io_u->breq)
-		blk_mq_end_io(io_u->breq, io_u->ans.ret);
+	ret = io_u->ans.ret;
+
+	spin_lock(&xnbd_conn->iou_lock);
+	list_add_tail(&io_u->list, &xnbd_conn->iou_pool);
+	spin_unlock(&xnbd_conn->iou_lock);
+
+	if (breq)
+		blk_mq_end_io(breq, ret);
 	else
 		pr_err("%s: Got NULL request in response\n", __func__);
 }
@@ -235,7 +226,7 @@ static int on_response(struct xio_session *session,
 
 	switch (command) {
 	case RAIO_CMD_IO_SUBMIT:
-		on_submit_answer(rsp);
+		on_submit_answer(xnbd_conn, rsp);
 		xio_release_response(rsp);
 		break;
 	case RAIO_CMD_OPEN:
@@ -445,7 +436,7 @@ int xnbd_create_device(struct xnbd_session *xnbd_session,
 	xnbd_file->index = xnbd_indexes++;
 	sprintf(xnbd_file->dev_name, "xnbd%d", xnbd_file->index);
 	xnbd_file->nr_queues = submit_queues;
-	xnbd_file->queue_depth = hw_queue_depth;
+	xnbd_file->queue_depth = XNBD_QUEUE_DEPTH;
 	xnbd_file->xnbd_conns = xnbd_session->xnbd_conns;
 	spin_lock(&xnbd_session->devs_lock);
 	list_add(&xnbd_file->list, &xnbd_session->devs_list);
@@ -572,6 +563,20 @@ static int xnbd_connect_work(void *data)
 	return 0;
 }
 
+static void xnbd_free_iou_pool(struct xnbd_connection *xnbd_conn)
+{
+	struct raio_io_u *io_u, *tmp;
+
+	spin_lock_irq(&xnbd_conn->iou_lock);
+	list_for_each_entry_safe(io_u, tmp, &xnbd_conn->iou_pool, list) {
+		list_del(&io_u->list);
+		kfree(io_u->iocb);
+		kfree(io_u->req.out.header.iov_base);
+		kfree(io_u);
+	}
+	spin_unlock_irq(&xnbd_conn->iou_lock);
+}
+
 /**
  * destroy xnbd_conn before waking up ktread task
  */
@@ -581,9 +586,49 @@ static void xnbd_destroy_conn(struct xnbd_connection *xnbd_conn)
 
 	xnbd_conn->session = NULL;
 	xnbd_conn->conn_th = NULL;
+	xnbd_free_iou_pool(xnbd_conn);
 	kfree(task);
 	kfree(xnbd_conn);
+}
 
+static int xnbd_alloc_iou_pool(struct xnbd_connection *xnbd_conn)
+{
+	struct raio_io_u *io_u;
+	int i;
+
+	spin_lock_init(&xnbd_conn->iou_lock);
+	INIT_LIST_HEAD(&xnbd_conn->iou_pool);
+	for (i = 0; i < XNBD_QUEUE_DEPTH; i++) {
+		io_u = kzalloc(sizeof(*io_u), GFP_KERNEL);
+		if (!io_u) {
+			pr_err("failed to allocate io_u");
+			goto out;
+		}
+
+		io_u->iocb = kzalloc(sizeof(*io_u->iocb), GFP_KERNEL);
+		if (!io_u->iocb) {
+			pr_err("failed to allocate iocb");
+			goto err_free_io_u;
+		}
+
+		io_u->req.out.header.iov_base = kzalloc(SUBMIT_BLOCK_SIZE +
+							sizeof(uint32_t) +
+							sizeof(struct raio_command),
+							GFP_KERNEL);
+		if (!io_u->req.out.header.iov_base) {
+			pr_err("failed to allocate io header");
+			goto err_free_iocb;
+		}
+		list_add(&io_u->list, &xnbd_conn->iou_pool);
+	}
+
+	return 0;
+err_free_iocb:
+	kfree(io_u->iocb);
+err_free_io_u:
+	kfree(io_u);
+out:
+	return -ENOMEM;
 }
 
 static int xnbd_create_conn(struct xnbd_session *xnbd_session, int cpu,
@@ -591,12 +636,17 @@ static int xnbd_create_conn(struct xnbd_session *xnbd_session, int cpu,
 {
 	struct xnbd_connection *xnbd_conn;
 	char name[50];
+	int ret;
 
 	xnbd_conn = kzalloc(sizeof(*xnbd_conn), GFP_KERNEL);
 	if (!xnbd_conn) {
 		pr_err("failed to allocate xnbd_conn");
 		return -ENOMEM;
 	}
+
+	ret = xnbd_alloc_iou_pool(xnbd_conn);
+	if (ret)
+		goto err_free_conn;
 
 	sprintf(name, "session thread %d", cpu);
 	xnbd_conn->session = xnbd_session->session;
@@ -610,6 +660,11 @@ static int xnbd_create_conn(struct xnbd_session *xnbd_session, int cpu,
 	*conn = xnbd_conn;
 
 	return 0;
+err_free_conn:
+	xnbd_free_iou_pool(xnbd_conn);
+	kfree(xnbd_conn);
+
+	return ret;
 }
 
 int xnbd_session_create(const char *portal)

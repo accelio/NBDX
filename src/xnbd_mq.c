@@ -256,7 +256,7 @@ int xnbd_register_block_device(struct xnbd_file *xnbd_file)
 
 	pr_debug("%s called\n", __func__);
 
-	xnbd_mq_reg.queue_depth = hw_queue_depth;
+	xnbd_mq_reg.queue_depth = XNBD_QUEUE_DEPTH;
 	xnbd_mq_reg.nr_hw_queues = submit_queues;
 	xnbd_file->major = xnbd_major;
 
