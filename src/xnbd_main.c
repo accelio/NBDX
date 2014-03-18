@@ -258,7 +258,7 @@ static int on_response(struct xio_session *session,
 	uint32_t command;
 
 	unpack_u32(&command, rsp->in.header.iov_base);
-	printk("message: [%llu] - %s\n",
+	pr_debug("message: [%llu] - %s\n",
 			(rsp->request->sn + 1), (char *)rsp->in.header.iov_base);
 
 	switch (command) {
