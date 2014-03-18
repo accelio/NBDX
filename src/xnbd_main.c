@@ -183,7 +183,7 @@ struct xnbd_session *xnbd_session_find(struct list_head *s_data_list,
 	struct xnbd_session *ret = NULL;
 
 	list_for_each_entry(pos, s_data_list, list) {
-		if (!strcmp(pos->kobj->name, host_name)) {
+		if (!strcmp(pos->kobj.name, host_name)) {
 			ret = pos;
 			break;
 		}
@@ -766,6 +766,12 @@ int xnbd_session_create(const char *portal)
 		return -ENOMEM;
 	}
 
+	ret = xnbd_create_portal_files(&xnbd_session->kobj);
+	if (ret) {
+		ret = -ENOMEM;
+		goto err_sysfs;
+	}
+
 	strcpy(xnbd_session->portal, portal);
 	xnbd_session->session = xio_session_create(XIO_SESSION_CLIENT,
 		     &attr, xnbd_session->portal, 0, 0, xnbd_session);
@@ -778,11 +784,6 @@ int xnbd_session_create(const char *portal)
 	INIT_LIST_HEAD(&xnbd_session->devs_list);
 	spin_lock_init(&xnbd_session->devs_lock);
 
-	xnbd_session->kobj = xnbd_create_portal_files();
-	if (!xnbd_session->kobj) {
-		ret = -ENOMEM;
-		goto err_destroy_session;
-	}
 	mutex_lock(&g_lock);
 	list_add(&xnbd_session->list, &g_xnbd_sessions);
 	created_portals++;
@@ -822,15 +823,13 @@ err_destroy_conns:
 	}
 	kfree(xnbd_session->xnbd_conns);
 err_destroy_portal:
-	xnbd_destroy_kobj(xnbd_session->kobj);
-err_destroy_session:
 	mutex_lock(&g_lock);
 	list_del(&xnbd_session->list);
 	mutex_unlock(&g_lock);
 	xio_session_destroy(xnbd_session->session);
 err_free_session:
-	kfree(xnbd_session);
-
+	xnbd_destroy_kobj(&xnbd_session->kobj);
+err_sysfs:
 	return ret;
 
 }
@@ -838,8 +837,9 @@ err_free_session:
 void xnbd_session_destroy(struct xnbd_session *xnbd_session)
 {
 	xnbd_destroy_session_devices(xnbd_session);
+	mutex_lock(&g_lock);
 	list_del(&xnbd_session->list);
-	kfree(xnbd_session);
+	mutex_unlock(&g_lock);
 }
 
 static int __init xnbd_init_module(void)
@@ -867,12 +867,10 @@ static void __exit xnbd_cleanup_module(void)
 
 	unregister_blkdev(xnbd_major, "xnbd");
 
-	mutex_lock(&g_lock);
 	list_for_each_entry_safe(xnbd_session, tmp, &g_xnbd_sessions, list) {
-		xnbd_destroy_kobj(xnbd_session->kobj);
 		xnbd_session_destroy(xnbd_session);
+		xnbd_destroy_kobj(&xnbd_session->kobj);
 	}
-	mutex_unlock(&g_lock);
 
 	xnbd_destroy_sysfs_files();
 

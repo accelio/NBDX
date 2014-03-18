@@ -98,7 +98,7 @@ struct xnbd_session {
 	struct list_head	      list;
 	struct list_head	      devs_list; /* list of struct xnbd_file */
 	spinlock_t		      devs_lock;
-	struct kobject		     *kobj;
+	struct kobject		     kobj;
 	struct completion	      conns_wait;
 	atomic_t		      conns_count;
 };
@@ -146,7 +146,7 @@ void xnbd_destroy_device(struct xnbd_session *xnbd_session,
                          struct xnbd_file *xnbd_file);
 int xnbd_create_sysfs_files(void);
 void xnbd_destroy_sysfs_files(void);
-struct kobject* xnbd_create_portal_files(void);
+int xnbd_create_portal_files(struct kobject *kobj);
 int xnbd_create_device_files(struct kobject *p_kobj,
                              const char *dev_name, struct kobject *kobj);
 void xnbd_destroy_kobj(struct kobject *kobj);

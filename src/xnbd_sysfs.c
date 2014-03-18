@@ -39,6 +39,39 @@
 #include "xnbd.h"
 
 #define kobj_to_xnbd_dev(x) container_of(x, struct xnbd_file, kobj)
+#define kobj_to_xnbd_session(x) container_of(x, struct xnbd_session, kobj)
+
+static ssize_t xnbd_kobj_attr_show(struct kobject *kobj,
+				   struct attribute *attr,
+				   char *buf)
+{
+	struct kobj_attribute *kattr;
+	ssize_t ret = -EIO;
+
+	kattr = container_of(attr, struct kobj_attribute, attr);
+	if (kattr->show)
+		ret = kattr->show(kobj, kattr, buf);
+		return ret;
+}
+
+static ssize_t xnbd_kobj_attr_store(struct kobject *kobj,
+				    struct attribute *attr,
+				    const char *buf,
+				    size_t count)
+{
+	struct kobj_attribute *kattr;
+	ssize_t ret = -EIO;
+
+   kattr = container_of(attr, struct kobj_attribute, attr);
+   if (kattr->store)
+		ret = kattr->store(kobj, kattr, buf, count);
+        return ret;
+}
+
+const struct sysfs_ops xnbd_kobj_sysfs_ops = {
+		.show   = xnbd_kobj_attr_show,
+		.store  = xnbd_kobj_attr_store,
+};
 
 static void _xnbd_destroy_kobj(void *obj)
 {
@@ -60,7 +93,6 @@ static ssize_t delete_store(struct kobject *kobj,
 {
 	int i;
 	struct xnbd_session *session_d;
-	ssize_t ret;
 
 	if (kstrtoint(buf, 10, &i)) {
 		pr_err("failed to process input value\n");
@@ -72,22 +104,14 @@ static ssize_t delete_store(struct kobject *kobj,
 		return -EINVAL;
 	}
 
-	mutex_lock(&g_lock);
-	session_d = xnbd_session_find(&g_xnbd_sessions, kobj->name);
-	if (!session_d) {
-		pr_err("%s: didn't find xnbd_session, probably was removed\n", __func__);
-		ret = -ENOENT;
-		goto out;
-	}
+	session_d = kobj_to_xnbd_session(kobj);
+
 	xnbd_session_destroy(session_d);
 
-	ret = count;
-out:
-	mutex_unlock(&g_lock);
 	sysfs_schedule_callback(kobj, _xnbd_destroy_kobj,
 				kobj, THIS_MODULE);
 
-	return ret;
+	return count;
 }
 
 static struct kobj_attribute delete_attribute = __ATTR(delete, 0666,
@@ -108,31 +132,21 @@ static ssize_t device_store(struct kobject *kobj,
 	char xdev_name[MAX_XNBD_DEV_NAME];
 	ssize_t ret;
 
-	mutex_lock(&g_lock);
-	session_d = xnbd_session_find(&g_xnbd_sessions, kobj->name);
-	if (!session_d) {
-		pr_err("%s: failed to find session data\n", __func__);
-		ret = -ENOENT;
-		goto out;
-	}
+	session_d = kobj_to_xnbd_session(kobj);
 
 	sscanf(buf, "%s", xdev_name);
 	if(xnbd_file_find(session_d, xdev_name)) {
 		pr_err("Device already exists: %s", xdev_name);
-		ret = -EEXIST;
-		goto out;
+		return -EEXIST;
 	}
 
 	ret = xnbd_create_device(session_d, xdev_name, kobj);
 	if (ret) {
-		pr_err("failed to open file=%s\n", xdev_name);
-		goto out;
+		pr_err("failed to open device %s\n", xdev_name);
+		return ret;
 	}
 
-	ret = count;
-out:
-	mutex_unlock(&g_lock);
-	return ret;
+	return count;
 }
 
 static struct kobj_attribute device_attribute = __ATTR(add_device, 0666,
@@ -148,29 +162,48 @@ static struct attribute_group default_device_attr_group = {
 	.attrs = default_device_attrs,
 };
 
+static void xnbd_session_release(struct kobject *kobj)
+{
+	struct xnbd_session *xnbd_session;
+
+	xnbd_session = kobj_to_xnbd_session(kobj);
+
+	kfree(xnbd_session);
+}
+
+static struct kobj_type xnbd_session_ktype = {
+		.sysfs_ops = &xnbd_kobj_sysfs_ops,
+		.release = xnbd_session_release,
+};
+
 static struct kobject *sysfs_kobj;
 
-struct kobject* xnbd_create_portal_files(void)
+int xnbd_create_portal_files(struct kobject *kobj)
 {
-	int err = 0;
+	int ret = 0;
 	char portal_name[MAX_PORTAL_NAME];
-	struct kobject *kobj;
 
 	sprintf(portal_name, "xnbdhost_%d", created_portals);
 
-	kobj = kobject_create_and_add(portal_name, sysfs_kobj);
-	if (!kobj) {
-		pr_err("failed to create kobject\n");
-		return NULL;
+	ret = kobject_init_and_add(kobj, &xnbd_session_ktype, sysfs_kobj, "%s",
+							   portal_name);
+	if (ret) {
+		pr_err("failed to init and add kobject\n");
+		goto err;
 	}
 
-	err = sysfs_create_group(kobj, &default_device_attr_group);
-	if (err) {
-		kobject_put(kobj);
-		return NULL;
+	ret = sysfs_create_group(kobj, &default_device_attr_group);
+	if (ret) {
+		pr_err("failed to create sysfs group\n");
+		goto err;
 	}
 
-	return kobj;
+	return 0;
+
+err:
+	xnbd_destroy_kobj(kobj);
+
+	return ret;
 }
 
 void xnbd_destroy_kobj(struct kobject *kobj)
@@ -235,7 +268,7 @@ int xnbd_create_sysfs_files(void)
 
 void xnbd_destroy_sysfs_files(void)
 {
-	kobject_put(sysfs_kobj);
+	xnbd_destroy_kobj(sysfs_kobj);
 }
 
 static ssize_t device_state_show(struct kobject *kobj,
@@ -276,7 +309,6 @@ static ssize_t delete_device_store(struct kobject *kobj,
 	struct xnbd_session *xnbd_session;
 	struct xnbd_file *xnbd_device;
 	int i;
-	ssize_t ret;
 
 	if (kstrtoint(buf, 10, &i)) {
 		pr_err("failed to process input value\n");
@@ -288,26 +320,14 @@ static ssize_t delete_device_store(struct kobject *kobj,
 		return -EINVAL;
 	}
 
-	mutex_lock(&g_lock);
-	xnbd_session = xnbd_session_find(&g_xnbd_sessions, kobj->parent->name);
-	if (!xnbd_session) {
-		pr_err("%s: didn't find xnbd_session, probably was removed\n",
-               __func__);
-		ret = -ENOENT;
-		mutex_unlock(&g_lock);
-		goto out;
-	}
-	mutex_unlock(&g_lock);
-
+	xnbd_session = kobj_to_xnbd_session(kobj->parent);
 	xnbd_device = kobj_to_xnbd_dev(kobj);
 
 	xnbd_destroy_device(xnbd_session, xnbd_device);
 
-	ret = count;
-out:
 	sysfs_schedule_callback(kobj, _xnbd_destroy_kobj, kobj, THIS_MODULE);
 
-	return ret;
+	return count;
 }
 
 static struct kobj_attribute delete_device_attribute = __ATTR(delete,
@@ -331,38 +351,6 @@ static void xnbd_device_release(struct kobject *kobj)
 
 	kfree(xnbd_device);
 }
-
-static ssize_t xnbd_kobj_attr_show(struct kobject *kobj,
-				   struct attribute *attr,
-				   char *buf)
-{
-	struct kobj_attribute *kattr;
-	ssize_t ret = -EIO;
-
-	kattr = container_of(attr, struct kobj_attribute, attr);
-	if (kattr->show)
-		ret = kattr->show(kobj, kattr, buf);
-		return ret;
-}
-
-static ssize_t xnbd_kobj_attr_store(struct kobject *kobj,
-				    struct attribute *attr,
-				    const char *buf,
-				    size_t count)
-{
-	struct kobj_attribute *kattr;
-	ssize_t ret = -EIO;
-
-   kattr = container_of(attr, struct kobj_attribute, attr);
-   if (kattr->store)
-		ret = kattr->store(kobj, kattr, buf, count);
-        return ret;
-}
-
-const struct sysfs_ops xnbd_kobj_sysfs_ops = {
-		.show   = xnbd_kobj_attr_show,
-		.store  = xnbd_kobj_attr_store,
-};
 
 static struct kobj_type xnbd_device_ktype = {
 		.sysfs_ops = &xnbd_kobj_sysfs_ops,
