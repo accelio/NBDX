@@ -244,6 +244,8 @@ static void on_submit_answer(struct xnbd_connection *xnbd_conn,
 		blk_mq_end_io(breq, ret);
 	else
 		pr_err("%s: Got NULL request in response\n", __func__);
+
+	xio_release_response(rsp);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -264,7 +266,6 @@ static int on_response(struct xio_session *session,
 	switch (command) {
 	case RAIO_CMD_IO_SUBMIT:
 		on_submit_answer(xnbd_conn, rsp);
-		xio_release_response(rsp);
 		break;
 	case RAIO_CMD_OPEN:
 	case RAIO_CMD_FSTAT:
