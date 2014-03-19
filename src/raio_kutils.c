@@ -145,7 +145,7 @@ int unpack_open_answer(char *buf, size_t len, int *fd)
 		return -EINVAL;
 	}
 	if (ans.ret_errno) {
-		return ans.ret_errno;
+		return -ans.ret_errno;
 	}
 	unpack_u32((uint32_t *)fd, buffer);
 
@@ -170,7 +170,7 @@ int unpack_fstat_answer(char *buf, size_t len, struct r_stat64 *stbuf)
 		return -EINVAL;
 	}
 	if (ans.ret_errno) {
-		return ans.ret_errno;
+		return -ans.ret_errno;
 	}
 
 	buffer = unpack_stat64(stbuf, buffer);
@@ -196,7 +196,7 @@ int unpack_setup_answer(char *buf, size_t len)
 		return -EINVAL;
 	}
 	if (ans.ret_errno) {
-		return ans.ret_errno;
+		return -ans.ret_errno;
 	}
 
 	return 0;
