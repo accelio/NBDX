@@ -384,8 +384,12 @@ static int xnbd_setup_remote_device(struct xnbd_session *xnbd_session,
 
 	xnbd_conn->req.out.data_iovlen = 0;
 
-	xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
+	retval = xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
 	put_cpu();
+	if (retval) {
+		pr_err("failed xio_send_request ret=%d\n", retval);
+		return retval;
+	}
 
 	pr_debug("%s: before waiting for event\n", __func__);
 	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
@@ -420,8 +424,12 @@ static int xnbd_stat_remote_device(struct xnbd_session *xnbd_session,
 			   xnbd_conn->req.out.header.iov_base,
 			   &xnbd_conn->req.out.header.iov_len);
 
-	xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
+	retval = xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
 	put_cpu();
+	if (retval) {
+		pr_err("failed xio_send_request ret=%d\n", retval);
+		return retval;
+	}
 
 	pr_debug("%s: before wait_event_interruptible\n", __func__);
 	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
@@ -431,10 +439,8 @@ static int xnbd_stat_remote_device(struct xnbd_session *xnbd_session,
 	retval = unpack_fstat_answer(xnbd_conn->rsp->in.header.iov_base,
 				     xnbd_conn->rsp->in.header.iov_len,
 				     &xnbd_file->stbuf);
-	if (retval) {
+	if (retval)
 		pr_err("failed fstat ret=%d\n", retval);
-		return retval;
-	}
 
 	pr_debug("after unpacking fstat response file_size=%llx bytes\n",
 		 xnbd_file->stbuf.st_size);
@@ -442,7 +448,7 @@ static int xnbd_stat_remote_device(struct xnbd_session *xnbd_session,
 	/* acknowlege xio that response is no longer needed */
 	xio_release_response(xnbd_conn->rsp);
 
-	return 0;
+	return retval;
 }
 
 static int xnbd_open_remote_device(struct xnbd_session *xnbd_session,
@@ -473,15 +479,12 @@ static int xnbd_open_remote_device(struct xnbd_session *xnbd_session,
 	retval = unpack_open_answer(xnbd_conn->rsp->in.header.iov_base,
 				    xnbd_conn->rsp->in.header.iov_len,
 				    &xnbd_file->fd);
-	if (retval) {
+	if (retval)
 		pr_err("failed to open remote device ret=%d\n", retval);
-		return retval;
-	}
 
 	xio_release_response(xnbd_conn->rsp);
-	pr_debug("after unpacking response fd=%d\n", xnbd_file->fd);
 
-	return 0;
+	return retval;
 }
 
 int xnbd_create_device(struct xnbd_session *xnbd_session,
