@@ -236,12 +236,12 @@ static void on_submit_answer(struct xnbd_connection *xnbd_conn,
 			io_u->iocb->raio_fildes, io_u->res, io_u->res2,
 			io_u->ans.ret, io_u->ans.ret_errno);
 
-	ret = io_u->ans.ret;
+	ret = -io_u->ans.ret;
 	if (ret) {
 		struct xnbd_file *xdev = io_u->breq->rq_disk->private_data;
 
 		pr_err("error response on xdev %s ret=%d\n", xdev->dev_name,
-							     io_u->ans.ret);
+							     ret);
 		xnbd_set_device_state(xdev, DEVICE_OFFLINE);
 	}
 
