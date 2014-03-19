@@ -521,20 +521,21 @@ int xnbd_create_device(struct xnbd_session *xnbd_session,
 		pr_err("device %s: Illegal state transition %s -> openning\n",
 		       xnbd_file->dev_name,
 		       xnbd_device_state_str(xnbd_file));
-		goto err_file;
+		kfree(xnbd_file);
+		goto err;
 	}
 
 	retval = xnbd_create_device_files(p_kobj, xnbd_file->dev_name, &xnbd_file->kobj);
 	if (retval) {
 		pr_err("failed to create sysfs for device %s\n",
 		       xnbd_file->dev_name);
-		goto err_sysfs;
+		goto err;
 	}
 
 	retval = xnbd_setup_queues(xnbd_file);
 	if (retval) {
 		pr_err("%s: xnbd_setup_queues failed\n", __func__);
-		goto err_file;
+		goto err_put;
 	}
 
 	retval = xnbd_open_remote_device(xnbd_session, xnbd_file);
@@ -574,9 +575,9 @@ int xnbd_create_device(struct xnbd_session *xnbd_session,
 
 err_queues:
 	xnbd_destroy_queues(xnbd_file);
-err_file:
-	kfree(xnbd_file);
-err_sysfs:
+err_put:
+	xnbd_destroy_kobj(&xnbd_file->kobj);
+err:
 	return retval;
 }
 
