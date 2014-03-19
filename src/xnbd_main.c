@@ -123,7 +123,7 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 					 &io_u->iocb->u.c.nbytes);
 		if (retval) {
 			pr_err("failed to map io vec\n");
-			return retval;
+			goto err;
 		}
 	} else {
 		io_u->req.out.data_iovlen = 0;
@@ -131,7 +131,7 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 					 &io_u->iocb->u.c.nbytes);
 		if (retval) {
 			pr_err("failed to map io vec\n");
-			return retval;
+			goto err;
 		}
 	}
 
@@ -143,10 +143,19 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 
 	pr_debug("sending req on cpu=%d\n", q->xnbd_conn->cpu_id);
 	cpu = get_cpu();
-	xio_send_request(q->xnbd_conn->conn, &io_u->req);
+	retval = xio_send_request(q->xnbd_conn->conn, &io_u->req);
 	put_cpu();
+	if (retval) {
+		pr_err("failed xio_send_request ret=%d\n", retval);
+		goto err;
+	}
 
 	return 0;
+err:
+	spin_lock(&q->xnbd_conn->iou_lock);
+	list_add_tail(&io_u->list, &q->xnbd_conn->iou_pool);
+	spin_unlock(&q->xnbd_conn->iou_lock);
+	return retval;
 }
 
 struct xnbd_file *xnbd_file_find(struct xnbd_session *xnbd_session,
