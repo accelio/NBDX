@@ -519,10 +519,6 @@ int xnbd_create_device(struct xnbd_session *xnbd_session,
 		goto err_sysfs;
 	}
 
-	spin_lock(&xnbd_session->devs_lock);
-	list_add(&xnbd_file->list, &xnbd_session->devs_list);
-	spin_unlock(&xnbd_session->devs_lock);
-
 	retval = xnbd_setup_queues(xnbd_file);
 	if (retval) {
 		pr_err("%s: xnbd_setup_queues failed\n", __func__);
@@ -557,6 +553,10 @@ int xnbd_create_device(struct xnbd_session *xnbd_session,
 	}
 
 	xnbd_set_device_state(xnbd_file, DEVICE_RUNNING);
+
+	spin_lock(&xnbd_session->devs_lock);
+	list_add(&xnbd_file->list, &xnbd_session->devs_list);
+	spin_unlock(&xnbd_session->devs_lock);
 
 	return 0;
 
