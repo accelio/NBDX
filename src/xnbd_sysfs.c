@@ -142,7 +142,7 @@ static ssize_t device_store(struct kobject *kobj,
 
 	ret = xnbd_create_device(session_d, xdev_name, kobj);
 	if (ret) {
-		pr_err("failed to open device %s\n", xdev_name);
+		pr_err("failed to create device %s\n", xdev_name);
 		return ret;
 	}
 
