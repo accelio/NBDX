@@ -407,8 +407,8 @@ static int xnbd_setup_remote_device(struct xnbd_session *xnbd_session,
 
 	retval = unpack_setup_answer(xnbd_conn->rsp->in.header.iov_base,
 				     xnbd_conn->rsp->in.header.iov_len);
-	if (retval)
-		pr_err("Failed to unpack setup answer, ret=%d\n", retval);
+	if (retval == -EINVAL)
+		pr_err("failed to unpack setup response");
 
 	pr_debug("after unpacking setup_answer\n");
 
@@ -448,8 +448,8 @@ static int xnbd_stat_remote_device(struct xnbd_session *xnbd_session,
 	retval = unpack_fstat_answer(xnbd_conn->rsp->in.header.iov_base,
 				     xnbd_conn->rsp->in.header.iov_len,
 				     &xnbd_file->stbuf);
-	if (retval)
-		pr_err("failed fstat ret=%d\n", retval);
+	if (retval == -EINVAL)
+		pr_err("failed to unpack fstat response\n");
 
 	pr_debug("after unpacking fstat response file_size=%llx bytes\n",
 		 xnbd_file->stbuf.st_size);
@@ -488,8 +488,8 @@ static int xnbd_open_remote_device(struct xnbd_session *xnbd_session,
 	retval = unpack_open_answer(xnbd_conn->rsp->in.header.iov_base,
 				    xnbd_conn->rsp->in.header.iov_len,
 				    &xnbd_file->fd);
-	if (retval)
-		pr_err("failed to open remote device ret=%d\n", retval);
+	if (retval == -EINVAL)
+		pr_err("failed to unpack open response\n");
 
 	xio_release_response(xnbd_conn->rsp);
 
