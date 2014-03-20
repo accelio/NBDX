@@ -151,10 +151,12 @@ static int xnbd_queue_rq(struct blk_mq_hw_ctx *hctx, struct request *rq)
 	xnbd_q = hctx->driver_data;
 	err = xnbd_request(rq, xnbd_q);
 
-	if (err)
-		return err;
-	else
+	if (err) {
+		rq->errors = -EIO;
+		return BLK_MQ_RQ_QUEUE_ERROR;
+	} else {
 		return BLK_MQ_RQ_QUEUE_OK;
+	}
 }
 
 static int xnbd_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
