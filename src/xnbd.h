@@ -106,7 +106,6 @@ struct xnbd_session {
 struct xnbd_queue {
 	unsigned int		     queue_depth;
 	struct xnbd_connection	    *xnbd_conn;
-	struct raio_iocb	    *piocb;
 	struct xnbd_file	    *xdev; /* pointer to parent*/
 };
 

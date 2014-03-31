@@ -108,11 +108,8 @@ static struct blk_mq_hw_ctx *xnbd_alloc_hctx(struct blk_mq_reg *reg,
 
 static void xnbd_free_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_index)
 {
-	struct xnbd_queue *xq = hctx->driver_data;
-
 	pr_err("%s called\n", __func__);
 
-	kfree(xq->piocb);
 	kfree(hctx);
 }
 
@@ -172,7 +169,6 @@ static int xnbd_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 	xq->xnbd_conn = xdev->xnbd_conns[index];
 	xq->xdev = xdev;
 	xq->queue_depth = xdev->queue_depth;
-	xq->piocb = kzalloc(sizeof(*xq->piocb), GFP_KERNEL);
 	hctx->driver_data = xq;
 
 	return 0;
