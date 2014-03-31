@@ -731,8 +731,8 @@ int xnbd_session_create(const char *portal)
 	}
 
 	/* wait for all connections establishment to complete */
-	if (!wait_for_completion_timeout(&xnbd_session->conns_wait,
-					 60 * HZ)) {
+	if (!wait_for_completion_interruptible_timeout(&xnbd_session->conns_wait,
+						       120 * HZ)) {
 		pr_err("connection establishment timeout expired\n");
 		goto err_destroy_conns;
 	}
