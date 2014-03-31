@@ -87,8 +87,6 @@ struct xnbd_connection {
 	struct xio_msg		req;
 	struct xio_msg	       *rsp;
 	wait_queue_head_t	wq;
-	struct list_head	iou_pool;
-	spinlock_t		iou_lock;
 };
 
 struct xnbd_session {

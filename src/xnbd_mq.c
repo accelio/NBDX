@@ -184,7 +184,7 @@ static struct blk_mq_ops xnbd_mq_ops = {
 
 static struct blk_mq_reg xnbd_mq_reg = {
 	.ops		= &xnbd_mq_ops,
-	.cmd_size	= 0,
+	.cmd_size	= sizeof(struct raio_io_u),
 	.flags		= BLK_MQ_F_SHOULD_MERGE,
 	.numa_node	= NUMA_NO_NODE,
 };

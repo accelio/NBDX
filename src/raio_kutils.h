@@ -97,20 +97,6 @@ struct raio_answer {
 	int32_t ret_errno;
 };
 
-
-struct raio_io_u {
-	struct raio_iocb		*iocb;
-	struct request *breq; // needed for on_answer
-	struct xio_msg			req;
-	struct xio_msg			*rsp;
-	int				res;
-	int				res2;
-	struct raio_answer		ans;
-	struct list_head		list;
-
-	char				req_hdr[512];
-};
-
 /** command for server */
 struct raio_command {
 	uint32_t command;
@@ -143,6 +129,19 @@ struct raio_iocb {
 	union {
 		struct raio_iocb_common	c;
 	} u;
+};
+
+struct raio_io_u {
+	struct raio_iocb		iocb;
+	struct request		       *breq;
+	struct xio_msg			req;
+	struct xio_msg		       *rsp;
+	int				res;
+	int				res2;
+	struct raio_answer		ans;
+	struct list_head		list;
+
+	char				req_hdr[512];
 };
 
 /** commands for raio server */
