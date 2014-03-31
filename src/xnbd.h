@@ -78,7 +78,7 @@ enum xnbd_dev_state {
 };
 
 struct xnbd_connection {
-	struct xio_session     *session;
+	struct xnbd_session    *xnbd_sess;
 	struct xio_context     *ctx;
 	struct xio_connection  *conn;
 	struct task_struct     *conn_th;

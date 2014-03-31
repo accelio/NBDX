@@ -138,7 +138,12 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 	io_u->breq = req;
 
 	cpu = get_cpu();
-	pr_debug("sending req on cpu=%d\n", xnbd_conn->cpu_id);
+	if (cpu != xnbd_conn->cpu_id) {
+		pr_debug("conn %d preempted to cpuid %d, switching conn\n",
+			 cpu, xnbd_conn->cpu_id);
+		xnbd_conn = xnbd_conn->xnbd_sess->xnbd_conns[cpu];
+	}
+	pr_debug("sending req on conn %d\n", xnbd_conn->cpu_id);
 	retval = xio_send_request(xnbd_conn->conn, &io_u->req);
 	put_cpu();
 	if (retval) {
@@ -617,8 +622,8 @@ static int xnbd_connect_work(void *data)
 	pr_info("cpu %d: context established ctx=%p\n",
 		xnbd_conn->cpu_id, xnbd_conn->ctx);
 
-	xnbd_conn->conn = xio_connect(xnbd_conn->session, xnbd_conn->ctx, 0,
-			NULL, xnbd_conn);
+	xnbd_conn->conn = xio_connect(xnbd_conn->xnbd_sess->session,
+				      xnbd_conn->ctx, 0, NULL, xnbd_conn);
 	if (!xnbd_conn->conn){
 		printk("connection open failed\n");
 		xio_context_destroy(xnbd_conn->ctx);
@@ -639,7 +644,7 @@ static void xnbd_destroy_conn(struct xnbd_connection *xnbd_conn)
 {
 	struct task_struct *task = xnbd_conn->conn_th;
 
-	xnbd_conn->session = NULL;
+	xnbd_conn->xnbd_sess = NULL;
 	xnbd_conn->conn_th = NULL;
 	kfree(task);
 	kfree(xnbd_conn);
@@ -658,7 +663,7 @@ static int xnbd_create_conn(struct xnbd_session *xnbd_session, int cpu,
 	}
 
 	sprintf(name, "session thread %d", cpu);
-	xnbd_conn->session = xnbd_session->session;
+	xnbd_conn->xnbd_sess = xnbd_session;
 	xnbd_conn->cpu_id = cpu;
 
 	pr_debug("opening thread on cpu %d\n", cpu);
