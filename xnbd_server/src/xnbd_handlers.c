@@ -71,6 +71,7 @@
 struct xnbd_io_u {
 	struct xnbd_event		ev_data;
 	struct xio_msg			*rsp;
+	void 				*buf;
 	struct xnbd_io_cmd		iocmd;
 
 	TAILQ_ENTRY(xnbd_io_u)		io_u_list;
@@ -408,6 +409,7 @@ static int xnbd_handle_setup(void *prv_session_data,
 		/* register each io_u in the free list */
 		for (j = 0; j < cpd->io_u_free_nr; j++) {
 			cpd->io_us_free[j].rsp = msg_pool_get(cpd->rsp_pool);
+			cpd->io_us_free[j].buf = cpd->io_us_free[j].rsp->out.data_iov[0].iov_base;
 			TAILQ_INSERT_TAIL(&cpd->io_u_free_list,
 					  &cpd->io_us_free[j],
 					  io_u_list);
@@ -616,6 +618,7 @@ static int xnbd_handle_submit(void *prv_session_data,
 		io_u->iocmd.buf			= io_u->rsp->out.data_iov[0].iov_base;
 		io_u->iocmd.mr			= io_u->rsp->out.data_iov[0].mr;
 	}
+
 	io_u->iocmd.fsize		= sd->fsize;
 	io_u->iocmd.offset		= iocb.u.c.offset;
 	io_u->iocmd.is_last_in_batch    = is_last_in_batch;
@@ -670,6 +673,7 @@ static int xnbd_handle_submit_comp(void *prv_session_data,
 	struct xnbd_io_u	   *io_u = rsp->user_context;
 
 	if (io_u) {
+		rsp->out.data_iov[0].iov_base = io_u->buf;
 		TAILQ_INSERT_TAIL(&pd->io_u_free_list, io_u, io_u_list);
 		pd->io_u_free_nr++;
 	}
