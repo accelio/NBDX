@@ -63,7 +63,6 @@
 	+ sizeof(uint64_t) /* mtime */                  \
 	+ sizeof(uint64_t) /* ctime */
 
-
 struct r_stat64 {
 	uint64_t     st_dev;     /* ID of device containing file */
 	uint64_t     st_ino;     /* inode number */
@@ -131,6 +130,12 @@ struct raio_iocb {
 	} u;
 };
 
+#define LAST_IN_BATCH sizeof(uint32_t)
+
+#define SUBMIT_HEADER_SIZE (SUBMIT_BLOCK_SIZE +	    \
+			    LAST_IN_BATCH +	    \
+			    sizeof(struct raio_command))
+
 struct raio_io_u {
 	struct raio_iocb		iocb;
 	struct request		       *breq;
@@ -141,7 +146,7 @@ struct raio_io_u {
 	struct raio_answer		ans;
 	struct list_head		list;
 
-	char				req_hdr[512];
+	char				req_hdr[SUBMIT_HEADER_SIZE];
 };
 
 /** commands for raio server */
