@@ -69,7 +69,7 @@
 #define SUPPORTED_PORTALS   5
 #define XNBD_SECT_SIZE	    512
 #define XNBD_SECT_SHIFT	    ilog2(XNBD_SECT_SIZE)
-#define XNBD_QUEUE_DEPTH    64
+#define XNBD_QUEUE_DEPTH    256
 
 enum xnbd_dev_state {
 	DEVICE_OPENNING = 1,
