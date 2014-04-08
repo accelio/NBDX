@@ -62,7 +62,7 @@
 #define MAXBLOCKSIZE	(128*1024)
 #define BS_IODEPTH	128
 #define NULL_BS_DEV_SIZE (1ULL << 32)
-#define EXTRA_MSGS	100
+#define EXTRA_MSGS	256
 
 
 /*---------------------------------------------------------------------------*/
