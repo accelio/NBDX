@@ -267,6 +267,7 @@ int xnbd_register_block_device(struct xnbd_file *xnbd_file)
 
 	xnbd_file->queue->queuedata = xnbd_file;
 	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, xnbd_file->queue);
+	queue_flag_clear_unlocked(QUEUE_FLAG_ADD_RANDOM, xnbd_file->queue);
 
 	xnbd_file->disk = alloc_disk_node(1, NUMA_NO_NODE);
 	if (!xnbd_file->disk) {
