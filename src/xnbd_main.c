@@ -61,6 +61,7 @@ static void msg_reset(struct xio_msg *msg)
 	msg->in.data_iovlen = 0;
 	msg->out.data_iovlen = 0;
 	msg->out.header.iov_len = 0;
+	msg->next = NULL;
 }
 
 static inline int xnbd_set_device_state(struct xnbd_file *xdev,

@@ -324,6 +324,7 @@ void msg_reset(struct xio_msg *msg)
 	msg->in.data_iovlen = 0;
 	msg->out.data_iovlen = 0;
 	msg->out.header.iov_len = 0;
+	msg->next = NULL;
 }
 
 
