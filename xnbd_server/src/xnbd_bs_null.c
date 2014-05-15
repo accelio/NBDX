@@ -67,6 +67,7 @@ int xnbd_bs_null_cmd_submit(struct xnbd_bs *dev,
 /*---------------------------------------------------------------------------*/
 static int xnbd_bs_null_open(struct xnbd_bs *dev, int fd)
 {
+	dev->stbuf.st_size = NULL_BS_DEV_SIZE;
 	return 0;
 }
 

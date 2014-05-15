@@ -73,8 +73,7 @@ void pack_open_command(const char *pathname, int flags,
 		       void *buf, size_t *len);
 void pack_close_command(int fd, void *buf, size_t *len);
 void pack_fstat_command(int fd, void *buf, size_t *len);
-void pack_setup_command(int fd, int maxevents,
-			void *buf, size_t *len);
+void pack_setup_command(int maxevents, void *buf, size_t *len);
 void pack_destroy_command(int fd, void *buf, size_t *len);
 void pack_submit_command(struct xnbd_iocb *iocb, int is_last_in_batch,
 			 void *buf, size_t *len);

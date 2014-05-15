@@ -2,6 +2,7 @@
 #define XNBD_BS_H
 
 #include <sys/queue.h>
+#include <sys/stat.h>
 #include <stdint.h>
 
 struct xnbd_io_cmd;
@@ -53,9 +54,11 @@ struct backingstore_template {
 struct xnbd_bs {
 	void				*ctx;
 	int				fd;
-	int				reserved;
+	int				is_null;
+	struct stat64   stbuf;
 	struct backingstore_template	*bst;
 	void				*dd;
+	TAILQ_ENTRY(xnbd_bs)        list;
 };
 
 /*---------------------------------------------------------------------------*/

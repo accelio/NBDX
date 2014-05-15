@@ -41,8 +41,8 @@
 #include <inttypes.h>
 #include <sys/param.h>
 #include <sys/types.h>
+#include <sys/queue.h>
 #include <ctype.h>
-#include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <linux/fs.h>
 #include <fcntl.h>
@@ -64,6 +64,13 @@
 #define NULL_BS_DEV_SIZE (1ULL << 32)
 #define EXTRA_MSGS	256
 
+#ifndef TAILQ_FOREACH_SAFE
+#define	TAILQ_FOREACH_SAFE(var, head, field, next)			 \
+	for ((var) = ((head)->tqh_first);				 \
+			(var) != NULL && ((next) = TAILQ_NEXT((var), field), 1); \
+			(var) = (next))
+#endif
+
 
 /*---------------------------------------------------------------------------*/
 /* data structres				                             */
@@ -78,11 +85,11 @@ struct xnbd_io_u {
 };
 
 struct xnbd_io_portal_data {
-	struct xnbd_bs			*bs_dev;
+	TAILQ_HEAD(, xnbd_bs)       dev_list;
+	int             ndevs;
 	int				iodepth;
 	int				io_nr;
 	int				io_u_free_nr;
-	int				pad;
 	struct xnbd_io_u		*io_us_free;
 	struct xio_msg			rsp;
 	struct xio_msg			close_rsp;
@@ -94,14 +101,26 @@ struct xnbd_io_portal_data {
 };
 
 struct xnbd_io_session_data {
-	int				fd;
-	int				is_null;
 	int				portals_nr;
 	int				pad;
-	uint64_t			fsize;
 
 	struct xnbd_io_portal_data	*pd;
 };
+
+/*---------------------------------------------------------------------------*/
+/* xnbd_lookup_bs_dev                                   */
+/*---------------------------------------------------------------------------*/
+struct xnbd_bs *xnbd_lookup_bs_dev(int fd, struct xnbd_io_portal_data *pd)
+{
+   struct xnbd_bs      *bs_dev;
+
+   TAILQ_FOREACH(bs_dev, &pd->dev_list, list) {
+       if (bs_dev->fd == fd) {
+           return bs_dev;
+       }
+   }
+   return NULL;
+}
 
 /*---------------------------------------------------------------------------*/
 /* xnbd_handler_init_session_data				             */
@@ -113,8 +132,6 @@ void *xnbd_handler_init_session_data(int portals_nr)
 
 	sd->pd		= calloc(portals_nr, sizeof(*sd->pd));
 	sd->portals_nr	= portals_nr;
-
-	sd->fd = -1;
 
 	return sd;
 }
@@ -131,6 +148,8 @@ void *xnbd_handler_init_portal_data(void *prv_session_data,
 	pd->ctx = ctx;
 	pd->rsp.out.header.iov_base = pd->rsp_hdr;
 	pd->rsp.out.header.iov_len  = sizeof(pd->rsp_hdr);
+	pd->ndevs = 0;
+	TAILQ_INIT(&pd->dev_list);
 
 	return pd;
 }
@@ -142,8 +161,6 @@ void xnbd_handler_free_session_data(void *prv_session_data)
 {
 	struct xnbd_io_session_data *sd = prv_session_data;
 	free(sd->pd);
-	if (sd->fd != -1 && !sd->is_null)
-		close(sd->fd);
 
 	free(sd);
 }
@@ -153,6 +170,15 @@ void xnbd_handler_free_session_data(void *prv_session_data)
 /*---------------------------------------------------------------------------*/
 void xnbd_handler_free_portal_data(void *prv_portal_data)
 {
+	struct xnbd_io_portal_data	*pd = prv_portal_data;
+	struct xnbd_bs      *bs_dev, *tmp;
+
+	TAILQ_FOREACH_SAFE(bs_dev, &pd->dev_list, list, tmp) {
+		if (bs_dev->fd != -1 && !bs_dev->is_null)
+			close(bs_dev->fd);
+		TAILQ_REMOVE(&pd->dev_list, bs_dev, list);
+	}
+
 }
 
 /*---------------------------------------------------------------------------*/
@@ -170,8 +196,7 @@ static int xnbd_handle_open(void *prv_session_data,
 	uint32_t	flags = 0;
 	unsigned	overall_size;
 	int		fd;
-	int		retval;
-	struct stat64	stbuf;
+	int i, is_null = 0;
 
 
 	overall_size = sizeof(fd);
@@ -193,30 +218,33 @@ static int xnbd_handle_open(void *prv_session_data,
 			goto reject;
 
 	} else {
-		sd->is_null = 1;
+		is_null = 1;
 		fd = 0;
 	}
 
-	/* get file size */
-	if (sd->is_null) {
-		sd->fsize = NULL_BS_DEV_SIZE;
-	} else {
-		retval = fstat64(fd, &stbuf);
-		if (retval == 0) {
-			if (S_ISBLK(stbuf.st_mode)) {
-				retval = ioctl(fd, BLKGETSIZE64,
-					       &stbuf.st_size);
-				if (retval < 0)
-					fprintf(stderr,
-						"Cannot get size, %m\n");
-			}
-			sd->fsize = stbuf.st_size;
-		}
+	for (i = 0; i < sd->portals_nr; i++) {
+		struct xnbd_bs *bs_dev;
+	    struct xnbd_io_portal_data  *cpd;
+
+	    cpd = &sd->pd[i];
+	    if (is_null) {
+		    bs_dev = xnbd_bs_init(cpd->ctx, "null");
+		    bs_dev->is_null = 1;
+	    } else {
+		    bs_dev = xnbd_bs_init(cpd->ctx, "aio");
+		    bs_dev->is_null = 0;
+	    }
+
+	   errno = -xnbd_bs_open(bs_dev, fd);
+	   if (errno)
+		   break;
+
+	  TAILQ_INSERT_TAIL(&cpd->dev_list, bs_dev, list);
+	  cpd->ndevs++;
 	}
 
-
 reject:
-	if (fd == -1) {
+	if (fd == -1 || errno) {
 		struct xnbd_answer ans = {XNBD_CMD_OPEN, 0,
 					   -1, errno};
 		pack_u32((uint32_t *)&ans.ret_errno,
@@ -259,7 +287,7 @@ static int xnbd_handle_close(void *prv_session_data,
 	struct xnbd_io_session_data	*sd = prv_session_data;
 	struct xnbd_io_portal_data	*pd = prv_portal_data;
 	int				fd;
-	int				retval = 0;
+	int				i, retval = 0;
 
 	unpack_u32((uint32_t *)&fd,
 		    cmd_data);
@@ -271,8 +299,13 @@ static int xnbd_handle_close(void *prv_session_data,
 		goto reject;
 	}
 
-	if (!sd->is_null)
-		retval = close(fd);
+	for (i = 0; i < sd->portals_nr; i++) {
+		struct xnbd_bs *bs_dev = xnbd_lookup_bs_dev(fd, &sd->pd[i]);
+
+		if (!bs_dev->is_null)
+			retval = close(bs_dev->fd);
+		TAILQ_REMOVE(&pd->dev_list, bs_dev, list);
+	}
 
 reject:
 	if (retval != 0) {
@@ -311,11 +344,10 @@ static int xnbd_handle_fstat(void *prv_session_data,
 			     char *cmd_data,
 			     struct xio_msg *req)
 {
-	struct xnbd_io_session_data	*sd = prv_session_data;
 	struct xnbd_io_portal_data	*pd = prv_portal_data;
 	int				fd;
 	int				retval = 0;
-	struct stat64			stbuf;
+	struct xnbd_bs          *bs_dev;
 
 	unpack_u32((uint32_t *)&fd,
 		    cmd_data);
@@ -327,20 +359,12 @@ static int xnbd_handle_fstat(void *prv_session_data,
 		goto reject;
 	}
 
-	if (sd->is_null) {
-		stbuf.st_size = NULL_BS_DEV_SIZE;
-		sd->fsize = stbuf.st_size;
-	} else {
-		retval = fstat64(fd, &stbuf);
-		if (retval == 0) {
-			if (S_ISBLK(stbuf.st_mode)) {
-				retval = ioctl(fd, BLKGETSIZE64,
-					       &stbuf.st_size);
-				if (retval < 0)
-					fprintf(stderr, "Cannot get size %m\n");
-			}
-			sd->fsize = stbuf.st_size;
-		}
+	bs_dev = xnbd_lookup_bs_dev(fd, pd);
+	if (!bs_dev) {
+		printf("%s: Ambigiuous device file descriptor %d\n", __func__, fd);
+		retval = -1;
+		errno = ENODEV;
+		goto reject;
 	}
 
 reject:
@@ -354,7 +378,7 @@ reject:
 	} else {
 		struct xnbd_answer ans = {XNBD_CMD_FSTAT,
 					  STAT_BLOCK_SIZE, 0, 0};
-		pack_stat64(&stbuf,
+		pack_stat64(&bs_dev->stbuf,
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
@@ -381,26 +405,25 @@ static int xnbd_handle_setup(void *prv_session_data,
 			     char *cmd_data,
 			     struct xio_msg *req)
 {
-	int				fd, i, j;
+	int				i, j, err = 0;
 	uint32_t			iodepth;
 	struct xnbd_io_session_data	*sd = prv_session_data;
 	struct xnbd_io_portal_data	*pd = prv_portal_data;
 	struct xnbd_io_portal_data	*cpd;
 
 
-	if (3*sizeof(int) != cmd->data_len) {
-		errno = EINVAL;
+	if (2*sizeof(int) != cmd->data_len) {
+		err = EINVAL;
 		printf("io setup request rejected\n");
 		goto reject;
 	}
 
-	unpack_u32(&iodepth,
-		   unpack_u32((uint32_t *)&fd,
-		   cmd_data));
+	unpack_u32(&iodepth, cmd_data);
 
 	for (i = 0; i < sd->portals_nr; i++) {
 		cpd = &sd->pd[i];
-		cpd->iodepth = iodepth;
+		/* divide remote iodepth between server resources */
+		cpd->iodepth = (iodepth / sd->portals_nr) + 1;
 		cpd->io_u_free_nr = cpd->iodepth + EXTRA_MSGS;
 		cpd->io_us_free = calloc(cpd->io_u_free_nr, sizeof(struct xnbd_io_u));
 		cpd->rsp_pool = msg_pool_create(512, MAXBLOCKSIZE, cpd->io_u_free_nr);
@@ -414,20 +437,11 @@ static int xnbd_handle_setup(void *prv_session_data,
 					  &cpd->io_us_free[j],
 					  io_u_list);
 		}
-
-		if (sd->is_null)
-			cpd->bs_dev = xnbd_bs_init(cpd->ctx, "null");
-		else
-			cpd->bs_dev = xnbd_bs_init(cpd->ctx, "aio");
-
-		errno = -xnbd_bs_open(cpd->bs_dev, fd);
-		if (errno)
-			break;
 	}
 
 reject:
-	if (errno) {
-		struct xnbd_answer ans = { XNBD_CMD_IO_SETUP, 0, -1, errno };
+	if (err) {
+		struct xnbd_answer ans = { XNBD_CMD_IO_SETUP, 0, -1, err };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
@@ -577,9 +591,9 @@ static int xnbd_handle_submit(void *prv_session_data,
 			      struct xio_msg *req)
 {
 	struct xnbd_io_portal_data	*pd = prv_portal_data;
-	struct xnbd_io_session_data	*sd = prv_session_data;
 	struct xnbd_io_u		*io_u;
 	struct xnbd_iocb		iocb;
+	struct xnbd_bs          *bs_dev;
 	struct xnbd_answer		ans;
 	int				retval;
 	uint32_t			is_last_in_batch;
@@ -619,7 +633,13 @@ static int xnbd_handle_submit(void *prv_session_data,
 		io_u->iocmd.mr			= io_u->rsp->out.data_iov[0].mr;
 	}
 
-	io_u->iocmd.fsize		= sd->fsize;
+	bs_dev = xnbd_lookup_bs_dev(io_u->iocmd.fd, pd);
+	if (!bs_dev) {
+		printf("Ambigiuous device file descriptor %d\n", io_u->iocmd.fd);
+		errno = ENODEV;
+		goto reject;
+	}
+	io_u->iocmd.fsize       = bs_dev->stbuf.st_size;
 	io_u->iocmd.offset		= iocb.u.c.offset;
 	io_u->iocmd.is_last_in_batch    = is_last_in_batch;
 	io_u->iocmd.res			= 0;
@@ -633,7 +653,7 @@ static int xnbd_handle_submit(void *prv_session_data,
 
 
 	/* issues request to bs */
-	retval = -xnbd_bs_cmd_submit(pd->bs_dev, &io_u->iocmd);
+	retval = -xnbd_bs_cmd_submit(bs_dev, &io_u->iocmd);
 	if (retval)
 		goto reject;
 
@@ -688,27 +708,6 @@ static int xnbd_handle_close_comp(void *prv_session_data,
 				    void *prv_portal_data,
 				    struct xio_msg *rsp)
 {
-	struct xnbd_io_portal_data *pd = prv_portal_data;
-	int			    j;
-
-	if (pd->bs_dev) {
-		xnbd_bs_close(pd->bs_dev);
-		xnbd_bs_exit(pd->bs_dev);
-		pd->bs_dev = NULL;
-	}
-	if (pd->io_us_free) {
-		for (j = 0; j < pd->iodepth; j++)
-			msg_pool_put(pd->rsp_pool, pd->io_us_free[j].rsp);
-	}
-
-	TAILQ_INIT(&pd->io_u_free_list);
-
-	free(pd->io_us_free);
-	pd->io_us_free = NULL;
-	pd->io_u_free_nr = 0;
-	msg_pool_delete(pd->rsp_pool);
-	pd->rsp_pool = NULL;
-
 	return 0;
 }
 /*---------------------------------------------------------------------------*/
@@ -764,6 +763,7 @@ int xnbd_handler_on_req(void *prv_session_data,
 				  req);
 		break;
 	case XNBD_CMD_IO_SETUP:
+		/* Once per Session */
 		xnbd_handle_setup(prv_session_data,
 				  prv_portal_data,
 				  &cmd, cmd_data,

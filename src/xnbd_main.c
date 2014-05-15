@@ -369,8 +369,8 @@ const char *xnbd_device_state_str(struct xnbd_file *dev)
 	return state;
 }
 
-static int xnbd_setup_remote_device(struct xnbd_session *xnbd_session,
-				    struct xnbd_file *xnbd_file)
+static int xnbd_setup_remote_session(struct xnbd_session *xnbd_session,
+			    int maxevents)
 {
 
 	int retval, cpu;
@@ -380,7 +380,7 @@ static int xnbd_setup_remote_device(struct xnbd_session *xnbd_session,
 	xnbd_conn = xnbd_session->xnbd_conns[cpu];
 
 	msg_reset(&xnbd_conn->req);
-	pack_setup_command(xnbd_file->fd, xnbd_file->queue_depth,
+	pack_setup_command(maxevents,
 			   xnbd_conn->req.out.header.iov_base,
 			   &xnbd_conn->req.out.header.iov_len);
 
@@ -540,13 +540,6 @@ int xnbd_create_device(struct xnbd_session *xnbd_session,
 	retval = xnbd_stat_remote_device(xnbd_session, xnbd_file);
 	if (retval) {
 		pr_err("failed to stat remote device %s ret=%d\n",
-		       xnbd_file->file_name, retval);
-		goto err_queues;
-	}
-
-	retval = xnbd_setup_remote_device(xnbd_session, xnbd_file);
-	if (retval) {
-		pr_err("failed to setup remote device %s ret=%d\n",
 		       xnbd_file->file_name, retval);
 		goto err_queues;
 	}
@@ -739,6 +732,14 @@ int xnbd_session_create(const char *portal)
 	if (!wait_for_completion_interruptible_timeout(&xnbd_session->conns_wait,
 						       120 * HZ)) {
 		pr_err("connection establishment timeout expired\n");
+		goto err_destroy_conns;
+	}
+
+	ret = xnbd_setup_remote_session(xnbd_session,
+			submit_queues * XNBD_QUEUE_DEPTH);
+	if (ret) {
+		pr_err("failed to setup remote session %s ret=%d\n",
+				xnbd_session->portal, ret);
 		goto err_destroy_conns;
 	}
 

@@ -216,18 +216,17 @@ void pack_fstat_command(int fd, void *buf, size_t *len)
 /*---------------------------------------------------------------------------*/
 /* pack_setup_command				                             */
 /*---------------------------------------------------------------------------*/
-void pack_setup_command(int fd, int maxevents,
+void pack_setup_command(int maxevents,
 			void *buf, size_t *len)
 {
 	char		*buffer = buf;
-	unsigned int	overall_size = 3*sizeof(uint32_t);
+	unsigned int	overall_size = 2*sizeof(uint32_t);
 	struct xnbd_command cmd = { XNBD_CMD_IO_SETUP, overall_size };
 
 	pack_u32((uint32_t *)&maxevents,
-	pack_u32((uint32_t *)&fd,
 	pack_u32(&cmd.data_len,
 	pack_u32(&cmd.command,
-		 buffer))));
+		 buffer)));
 
 	*len = sizeof(cmd) + overall_size;
 }
