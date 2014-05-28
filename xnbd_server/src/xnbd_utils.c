@@ -220,7 +220,7 @@ void pack_setup_command(int maxevents,
 			void *buf, size_t *len)
 {
 	char		*buffer = buf;
-	unsigned int	overall_size = 2*sizeof(uint32_t);
+	unsigned int	overall_size = sizeof(maxevents);
 	struct xnbd_command cmd = { XNBD_CMD_IO_SETUP, overall_size };
 
 	pack_u32((uint32_t *)&maxevents,

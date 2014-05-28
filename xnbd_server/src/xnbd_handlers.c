@@ -412,7 +412,7 @@ static int xnbd_handle_setup(void *prv_session_data,
 	struct xnbd_io_portal_data	*cpd;
 
 
-	if (2*sizeof(int) != cmd->data_len) {
+	if (sizeof(int) != cmd->data_len) {
 		err = EINVAL;
 		printf("io setup request rejected\n");
 		goto reject;
