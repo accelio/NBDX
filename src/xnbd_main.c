@@ -663,6 +663,12 @@ static int xnbd_connect_work(void *data)
 
 	/* the default xio supplied main loop */
 	xio_context_run_loop(xnbd_conn->ctx);
+
+	/* complete when last loop was stopped */
+	if (atomic_dec_and_test(&xnbd_conn->xnbd_sess->destroy_conns_count))
+		complete(&xnbd_conn->xnbd_sess->destroy_conns_wait);
+
+	do_exit(0);
 	return 0;
 }
 
@@ -675,8 +681,42 @@ static void xnbd_destroy_conn(struct xnbd_connection *xnbd_conn)
 
 	xnbd_conn->xnbd_sess = NULL;
 	xnbd_conn->conn_th = NULL;
-	kfree(task);
+	xnbd_conn->conn = NULL;
+	xnbd_conn->ctx = NULL;
+	/* release buffer for management messages */
+	kfree(xnbd_conn->req.out.header.iov_base);
 	kfree(xnbd_conn);
+}
+
+static void xnbd_destroy_session_connections(struct xnbd_session *xnbd_session)
+{
+	struct xnbd_connection *xnbd_conn;
+	int i;
+
+	init_completion(&xnbd_session->destroy_conns_wait);
+	atomic_set(&xnbd_session->destroy_conns_count, submit_queues);
+
+	for (i = 0; i < submit_queues; i++) {
+		xnbd_conn = xnbd_session->xnbd_conns[i];
+		xio_disconnect(xnbd_conn->conn);
+	}
+
+	/* wait for all connections to be destroyed */
+	wait_for_completion(&xnbd_session->destroy_conns_wait);
+
+	for (i = 0; i < submit_queues; i++) {
+		xnbd_conn = xnbd_session->xnbd_conns[i];
+		/* TODO
+		 * need to destroy xio context after stopping event
+		 * loop in the specific kthread.
+		 * due to xio disconnect issue, the context isn't destroyed
+		 * at the bounded kthread
+		 * */
+		xio_context_destroy(xnbd_conn->ctx);
+		xnbd_destroy_conn(xnbd_conn);
+	}
+
+	kfree(xnbd_session->xnbd_conns);
 }
 
 static int xnbd_create_conn(struct xnbd_session *xnbd_session, int cpu,
@@ -802,6 +842,7 @@ err_sysfs:
 void xnbd_session_destroy(struct xnbd_session *xnbd_session)
 {
 	xnbd_destroy_session_devices(xnbd_session);
+	xnbd_destroy_session_connections(xnbd_session);
 	mutex_lock(&g_lock);
 	list_del(&xnbd_session->list);
 	mutex_unlock(&g_lock);
