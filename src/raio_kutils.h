@@ -171,11 +171,13 @@ const char *unpack_stat64(struct r_stat64 *result, const char *buffer);
 
 void pack_open_command(const char *pathname, int flags,
 		       void *buf, size_t *len);
+void pack_close_command(int fd, void *buf, size_t *len);
 void pack_fstat_command(int fd, void *buf, size_t *len);
 
 
 
 int unpack_open_answer(char *buf, size_t len, int *fd);
+int unpack_close_answer(char *buf, size_t len);
 int unpack_fstat_answer(char *buf, size_t len, struct r_stat64 *stbuf);
 int unpack_setup_answer(char *buf, size_t len);
 

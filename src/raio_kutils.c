@@ -112,6 +112,23 @@ void pack_open_command(const char *pathname, int flags, void *buf, size_t *len)
 }
 
 /*---------------------------------------------------------------------------*/
+/* pack_close_command				                             */
+/*---------------------------------------------------------------------------*/
+void pack_close_command(int fd, void *buf, size_t *len)
+{
+	char		*buffer = buf;
+	unsigned int	overall_size = sizeof(fd);
+	struct raio_command cmd = { RAIO_CMD_CLOSE, overall_size };
+
+	pack_u32((uint32_t *)&fd,
+	pack_u32(&cmd.data_len,
+	pack_u32(&cmd.command,
+		 buffer)));
+
+	*len = sizeof(cmd) + overall_size;
+}
+
+/*---------------------------------------------------------------------------*/
 /* pack_fstat_command				                             */
 /*---------------------------------------------------------------------------*/
 void pack_fstat_command(int fd, void *buf, size_t *len)
@@ -148,6 +165,29 @@ int unpack_open_answer(char *buf, size_t len, int *fd)
 		return -ans.ret_errno;
 	}
 	unpack_u32((uint32_t *)fd, buffer);
+
+	return 0;
+}
+
+/*---------------------------------------------------------------------------*/
+/* unpac_close_answer				                             */
+/*---------------------------------------------------------------------------*/
+int unpack_close_answer(char *buf, size_t len)
+{
+	struct raio_answer ans;
+
+	unpack_u32((uint32_t *)&ans.ret_errno,
+		  unpack_u32((uint32_t *)&ans.ret,
+		  unpack_u32(&ans.data_len,
+		  unpack_u32(&ans.command,
+		  buf))));
+	if ((ans.command != RAIO_CMD_CLOSE) ||
+	    (0 != ans.data_len)) {
+		return -EINVAL;
+	}
+	if (ans.ret_errno) {
+		return -ans.ret_errno;
+	}
 
 	return 0;
 }

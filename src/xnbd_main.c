@@ -272,7 +272,7 @@ static int on_response(struct xio_session *session,
 		break;
 	case RAIO_CMD_OPEN:
 	case RAIO_CMD_FSTAT:
-	//case RAIO_CMD_CLOSE:
+	case RAIO_CMD_CLOSE:
 	case RAIO_CMD_IO_SETUP:
 	//case RAIO_CMD_IO_DESTROY:
 		/* break the loop */
@@ -490,6 +490,41 @@ static int xnbd_open_remote_device(struct xnbd_session *xnbd_session,
 	return retval;
 }
 
+static int xnbd_close_remote_device(struct xnbd_session *xnbd_session,
+				   int fd)
+{
+	struct xnbd_connection *xnbd_conn;
+	int retval, cpu;
+
+	cpu = get_cpu();
+	xnbd_conn = xnbd_session->xnbd_conns[cpu];
+	msg_reset(&xnbd_conn->req);
+	pack_close_command(fd,
+			xnbd_conn->req.out.header.iov_base,
+			&xnbd_conn->req.out.header.iov_len);
+
+	retval = xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
+	put_cpu();
+	if (retval) {
+		pr_err("failed xio_send_request ret=%d\n", retval);
+		return retval;
+	}
+
+	pr_debug("%s: before wait_event_interruptible\n", __func__);
+	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
+	pr_debug("%s: after wait_event_interruptible\n", __func__);
+	xnbd_conn->wq_flag = 0;
+
+	retval = unpack_close_answer(xnbd_conn->rsp->in.header.iov_base,
+				    xnbd_conn->rsp->in.header.iov_len);
+	if (retval == -EINVAL)
+		pr_err("failed to unpack close response\n");
+
+	xio_release_response(xnbd_conn->rsp);
+
+	return retval;
+}
+
 int xnbd_create_device(struct xnbd_session *xnbd_session,
 					   const char *xdev_name, struct kobject *p_kobj)
 {
@@ -573,14 +608,14 @@ void xnbd_destroy_device(struct xnbd_session *xnbd_session,
 {
 	pr_debug("%s\n", __func__);
 
+	xnbd_set_device_state(xnbd_file, DEVICE_OFFLINE);
 	xnbd_unregister_block_device(xnbd_file);
-
+	xnbd_close_remote_device(xnbd_session, xnbd_file->fd);
 	xnbd_destroy_queues(xnbd_file);
 
 	spin_lock(&xnbd_session->devs_lock);
 	list_del(&xnbd_file->list);
 	spin_unlock(&xnbd_session->devs_lock);
-
 }
 
 static void xnbd_destroy_session_devices(struct xnbd_session *xnbd_session)

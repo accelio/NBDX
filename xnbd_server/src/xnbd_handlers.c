@@ -286,6 +286,8 @@ static int xnbd_handle_close(void *prv_session_data,
 {
 	struct xnbd_io_session_data	*sd = prv_session_data;
 	struct xnbd_io_portal_data	*pd = prv_portal_data;
+	struct xnbd_io_portal_data  *cpd;
+	struct xnbd_bs *bs_dev;
 	int				fd;
 	int				i, retval = 0;
 
@@ -295,16 +297,26 @@ static int xnbd_handle_close(void *prv_session_data,
 	if (sizeof(fd) != cmd->data_len) {
 		retval = -1;
 		errno = EINVAL;
-		printf("open request rejected\n");
+		printf("close request rejected\n");
 		goto reject;
 	}
 
-	for (i = 0; i < sd->portals_nr; i++) {
-		struct xnbd_bs *bs_dev = xnbd_lookup_bs_dev(fd, &sd->pd[i]);
+	bs_dev = xnbd_lookup_bs_dev(fd, pd);
+	/* close fd only once */
+	if (!bs_dev->is_null) {
+		retval = close(bs_dev->fd);
+		if (!retval)
+			goto reject;
+	}
 
-		if (!bs_dev->is_null)
-			retval = close(bs_dev->fd);
-		TAILQ_REMOVE(&pd->dev_list, bs_dev, list);
+	for (i = 0; i < sd->portals_nr; i++) {
+		cpd = &sd->pd[i];
+		bs_dev = xnbd_lookup_bs_dev(fd, cpd);
+		TAILQ_REMOVE(&cpd->dev_list, bs_dev, list);
+		if (!bs_dev->is_null) {
+			xnbd_bs_close(bs_dev);
+			xnbd_bs_exit(bs_dev);
+		}
 	}
 
 reject:
@@ -324,13 +336,11 @@ reject:
 			 pd->rsp_hdr))));
 	 }
 
-	pd->close_rsp.out.header.iov_len = sizeof(struct xnbd_answer);
-	pd->close_rsp.out.header.iov_base = pd->rsp_hdr;
-	pd->close_rsp.out.data_iovlen = 0;
+	pd->rsp.out.header.iov_len = sizeof(struct xnbd_answer);
 
-	pd->close_rsp.request = req;
+	pd->rsp.request = req;
 
-	xio_send_response(&pd->close_rsp);
+	xio_send_response(&pd->rsp);
 
 	return 0;
 }
@@ -702,15 +712,6 @@ static int xnbd_handle_submit_comp(void *prv_session_data,
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handle_close_comp				                     */
-/*---------------------------------------------------------------------------*/
-static int xnbd_handle_close_comp(void *prv_session_data,
-				    void *prv_portal_data,
-				    struct xio_msg *rsp)
-{
-	return 0;
-}
-/*---------------------------------------------------------------------------*/
 /* xnbd_handler_on_req				                             */
 /*---------------------------------------------------------------------------*/
 int xnbd_handler_on_req(void *prv_session_data,
@@ -754,7 +755,6 @@ int xnbd_handler_on_req(void *prv_session_data,
 				  prv_portal_data,
 				  &cmd, cmd_data,
 				  req);
-		disconnect = 1;
 		break;
 	case XNBD_CMD_FSTAT:
 		xnbd_handle_fstat(prv_session_data,
@@ -809,10 +809,6 @@ void xnbd_handler_on_rsp_comp(void *prv_session_data,
 					rsp);
 		break;
 	case XNBD_CMD_CLOSE:
-		xnbd_handle_close_comp(prv_session_data,
-				       prv_portal_data,
-				       rsp);
-		break;
 	case XNBD_CMD_UNKNOWN:
 	case XNBD_CMD_IO_DESTROY:
 	case XNBD_CMD_OPEN:
