@@ -146,6 +146,22 @@ void pack_fstat_command(int fd, void *buf, size_t *len)
 }
 
 /*---------------------------------------------------------------------------*/
+/* pack_destroy_command				                             */
+/*---------------------------------------------------------------------------*/
+void pack_destroy_command(void *buf, size_t *len)
+{
+	char		*buffer = buf;
+	unsigned int	overall_size = 0;
+	struct raio_command cmd = { RAIO_CMD_IO_DESTROY, overall_size };
+
+	pack_u32(&cmd.data_len,
+	pack_u32(&cmd.command,
+		 buffer));
+
+	*len = sizeof(cmd) + overall_size;
+}
+
+/*---------------------------------------------------------------------------*/
 /* unpack_open_answer				                             */
 /*---------------------------------------------------------------------------*/
 int unpack_open_answer(char *buf, size_t len, int *fd)
@@ -291,3 +307,26 @@ void pack_setup_command(int maxevents, void *buf, size_t *len)
 	*len = sizeof(cmd) + overall_size;
 }
 
+/*---------------------------------------------------------------------------*/
+/* upack_destroy_answer				                             */
+/*---------------------------------------------------------------------------*/
+int unpack_destroy_answer(char *buf, size_t len)
+{
+	struct raio_answer ans;
+
+	unpack_u32((uint32_t *)&ans.ret_errno,
+	unpack_u32((uint32_t *)&ans.ret,
+	unpack_u32(&ans.data_len,
+	unpack_u32(&ans.command,
+		   buf))));
+
+	if ((ans.command != RAIO_CMD_IO_DESTROY) ||
+	    (0 != ans.data_len)) {
+		return -EINVAL;
+	}
+	if (ans.ret_errno) {
+		return -ans.ret_errno;;
+	}
+
+	return 0;
+}

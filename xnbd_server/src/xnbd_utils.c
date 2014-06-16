@@ -234,16 +234,15 @@ void pack_setup_command(int maxevents,
 /*---------------------------------------------------------------------------*/
 /* pack_destroy_command				                             */
 /*---------------------------------------------------------------------------*/
-void pack_destroy_command(int fd, void *buf, size_t *len)
+void pack_destroy_command(void *buf, size_t *len)
 {
 	char		*buffer = buf;
-	unsigned int	overall_size = sizeof(fd);
+	unsigned int	overall_size = 0;
 	struct xnbd_command cmd = { XNBD_CMD_IO_DESTROY, overall_size };
 
-	pack_u32((uint32_t *)&fd,
 	pack_u32(&cmd.data_len,
 	pack_u32(&cmd.command,
-		 buffer)));
+		 buffer));
 
 	*len = sizeof(cmd) + overall_size;
 }
@@ -374,3 +373,28 @@ void pack_submit_command(struct xnbd_iocb *iocb, int is_last_in_batch,
 	*len = sizeof(cmd) + overall_size;
 }
 
+/*---------------------------------------------------------------------------*/
+/* upack_destroy_answer				                             */
+/*---------------------------------------------------------------------------*/
+int unpack_destroy_answer(char *buf, size_t len)
+{
+	struct xnbd_answer ans;
+
+	unpack_u32((uint32_t *)&ans.ret_errno,
+	unpack_u32((uint32_t *)&ans.ret,
+	unpack_u32(&ans.data_len,
+	unpack_u32(&ans.command,
+		   buf))));
+
+	if ((ans.command != XNBD_CMD_IO_DESTROY) ||
+	    (0 != ans.data_len)) {
+		errno = EINVAL;
+		return -1;
+	}
+	if (ans.ret_errno) {
+		errno = ans.ret_errno;
+		return -1;
+	}
+
+	return 0;
+}

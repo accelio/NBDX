@@ -483,18 +483,33 @@ static int xnbd_handle_destroy(void *prv_session_data,
 			       char *cmd_data,
 			       struct xio_msg *req)
 {
+	struct xnbd_io_session_data	*sd = prv_session_data;
 	struct xnbd_io_portal_data	*pd = prv_portal_data;
-	int				fd;
+	struct xnbd_io_portal_data	*cpd;
+	int				i, j;
 	int				retval = 0;
 
-	unpack_u32((uint32_t *)&fd,
-		    cmd_data);
-
-	if (sizeof(fd) != cmd->data_len) {
+	if (0 != cmd->data_len) {
 		retval = -1;
 		errno = EINVAL;
-		printf("open request rejected\n");
+		printf("destroy request rejected\n");
 		goto reject;
+	}
+
+	for (i = 0; i < sd->portals_nr; i++) {
+		cpd = &sd->pd[i];
+		/* unregister each io_u in the free list */
+		for (j = 0; j < cpd->io_u_free_nr; j++) {
+			TAILQ_REMOVE(&cpd->io_u_free_list,
+					&cpd->io_us_free[j],
+					io_u_list);
+			msg_pool_put(cpd->rsp_pool, cpd->io_us_free[j].rsp);
+			cpd->io_us_free[j].buf = NULL;
+
+		}
+		cpd->io_u_free_nr = 0;
+		free(cpd->io_us_free);
+		msg_pool_delete(cpd->rsp_pool);
 	}
 
 reject:
@@ -770,6 +785,7 @@ int xnbd_handler_on_req(void *prv_session_data,
 				  req);
 		break;
 	case XNBD_CMD_IO_DESTROY:
+		/* Once per Session */
 		xnbd_handle_destroy(prv_session_data,
 				    prv_portal_data,
 				    &cmd, cmd_data,

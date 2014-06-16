@@ -274,7 +274,7 @@ static int on_response(struct xio_session *session,
 	case RAIO_CMD_FSTAT:
 	case RAIO_CMD_CLOSE:
 	case RAIO_CMD_IO_SETUP:
-	//case RAIO_CMD_IO_DESTROY:
+	case RAIO_CMD_IO_DESTROY:
 		/* break the loop */
 		xnbd_conn->rsp = rsp;
 		xnbd_conn->wq_flag = 1;
@@ -405,6 +405,45 @@ static int xnbd_setup_remote_session(struct xnbd_session *xnbd_session,
 		pr_err("failed to unpack setup response");
 
 	pr_debug("after unpacking setup_answer\n");
+
+	/* acknowlege xio that response is no longer needed */
+	xio_release_response(xnbd_conn->rsp);
+
+	return retval;
+
+}
+
+static int xnbd_destroy_remote_session(struct xnbd_session *xnbd_session)
+{
+
+	int retval, cpu;
+	struct xnbd_connection *xnbd_conn;
+
+	cpu = get_cpu();
+	xnbd_conn = xnbd_session->xnbd_conns[cpu];
+
+	msg_reset(&xnbd_conn->req);
+	pack_destroy_command(xnbd_conn->req.out.header.iov_base,
+			&xnbd_conn->req.out.header.iov_len);
+
+	xnbd_conn->req.out.data_iovlen = 0;
+
+	retval = xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
+	put_cpu();
+	if (retval) {
+		pr_err("failed xio_send_request ret=%d\n", retval);
+		return retval;
+	}
+
+	pr_debug("%s: before waiting for event\n", __func__);
+	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
+	pr_debug("%s: after waiting for event\n", __func__);
+	xnbd_conn->wq_flag = 0;
+
+	retval = unpack_destroy_answer(xnbd_conn->rsp->in.header.iov_base,
+			xnbd_conn->rsp->in.header.iov_len);
+	if (retval == -EINVAL)
+		pr_err("failed to unpack destroy response");
 
 	/* acknowlege xio that response is no longer needed */
 	xio_release_response(xnbd_conn->rsp);
@@ -842,7 +881,9 @@ err_sysfs:
 void xnbd_session_destroy(struct xnbd_session *xnbd_session)
 {
 	xnbd_destroy_session_devices(xnbd_session);
+	xnbd_destroy_remote_session(xnbd_session);
 	xnbd_destroy_session_connections(xnbd_session);
+
 	mutex_lock(&g_lock);
 	list_del(&xnbd_session->list);
 	mutex_unlock(&g_lock);

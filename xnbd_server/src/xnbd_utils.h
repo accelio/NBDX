@@ -74,7 +74,7 @@ void pack_open_command(const char *pathname, int flags,
 void pack_close_command(int fd, void *buf, size_t *len);
 void pack_fstat_command(int fd, void *buf, size_t *len);
 void pack_setup_command(int maxevents, void *buf, size_t *len);
-void pack_destroy_command(int fd, void *buf, size_t *len);
+void pack_destroy_command(void *buf, size_t *len);
 void pack_submit_command(struct xnbd_iocb *iocb, int is_last_in_batch,
 			 void *buf, size_t *len);
 
@@ -84,6 +84,7 @@ int unpack_open_answer(char *buf, size_t len, int *fd);
 int unpack_close_answer(char *buf, size_t len);
 int unpack_fstat_answer(char *buf, size_t len, struct stat64 *stbuf);
 int unpack_setup_answer(char *buf, size_t len);
+int unpack_destroy_answer(char *buf, size_t len);
 
 #endif  /* XNBD_UTILS_H */
 
