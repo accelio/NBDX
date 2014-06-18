@@ -880,13 +880,13 @@ err_sysfs:
 
 void xnbd_session_destroy(struct xnbd_session *xnbd_session)
 {
-	xnbd_destroy_session_devices(xnbd_session);
-	xnbd_destroy_remote_session(xnbd_session);
-	xnbd_destroy_session_connections(xnbd_session);
-
 	mutex_lock(&g_lock);
 	list_del(&xnbd_session->list);
 	mutex_unlock(&g_lock);
+
+	xnbd_destroy_session_devices(xnbd_session);
+	xnbd_destroy_remote_session(xnbd_session);
+	xnbd_destroy_session_connections(xnbd_session);
 }
 
 static int __init xnbd_init_module(void)
