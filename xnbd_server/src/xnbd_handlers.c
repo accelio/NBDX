@@ -530,8 +530,6 @@ reject:
 	}
 
 	pd->rsp.out.header.iov_len = sizeof(struct xnbd_answer);
-	pd->rsp.out.data_iovlen = 0;
-
 	pd->rsp.request = req;
 
 	xio_send_response(&pd->rsp);
