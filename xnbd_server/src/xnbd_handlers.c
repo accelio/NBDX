@@ -174,8 +174,11 @@ void xnbd_handler_free_portal_data(void *prv_portal_data)
 	struct xnbd_bs      *bs_dev, *tmp;
 
 	TAILQ_FOREACH_SAFE(bs_dev, &pd->dev_list, list, tmp) {
-		if (bs_dev->fd != -1 && !bs_dev->is_null)
+		if (!bs_dev->is_null) {
 			close(bs_dev->fd);
+			xnbd_bs_close(bs_dev);
+			xnbd_bs_exit(bs_dev);
+		}
 		TAILQ_REMOVE(&pd->dev_list, bs_dev, list);
 	}
 
