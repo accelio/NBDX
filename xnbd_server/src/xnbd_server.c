@@ -291,7 +291,6 @@ static int on_session_event(struct xio_session *session,
 					   ses_data->portal_data[i].tdata =
 						   NULL;
 					   server_data->last_reaped = i;
-					   break;
 					}
 				}
 				xnbd_handler_free_session_data(
