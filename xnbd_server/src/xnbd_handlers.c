@@ -621,7 +621,7 @@ static int xnbd_handle_submit(void *prv_session_data,
 	struct xnbd_iocb		iocb;
 	struct xnbd_bs          *bs_dev;
 	struct xnbd_answer		ans;
-	int				retval;
+	int				retval = 0;
 	uint32_t			is_last_in_batch;
 	uint32_t			msg_sz = SUBMIT_BLOCK_SIZE +
 						 sizeof(uint32_t);
