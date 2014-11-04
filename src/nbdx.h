@@ -71,14 +71,14 @@
 #define XNBD_SECT_SHIFT	    ilog2(XNBD_SECT_SIZE)
 #define XNBD_QUEUE_DEPTH    256
 
-enum xnbd_dev_state {
+enum nbdx_dev_state {
 	DEVICE_OPENNING = 1,
 	DEVICE_RUNNING,
 	DEVICE_OFFLINE
 };
 
-struct xnbd_connection {
-	struct xnbd_session    *xnbd_sess;
+struct nbdx_connection {
+	struct nbdx_session    *nbdx_sess;
 	struct xio_context     *ctx;
 	struct xio_connection  *conn;
 	struct task_struct     *conn_th;
@@ -89,12 +89,12 @@ struct xnbd_connection {
 	wait_queue_head_t	wq;
 };
 
-struct xnbd_session {
+struct nbdx_session {
 	struct xio_session	     *session;
-	struct xnbd_connection	    **xnbd_conns;
+	struct nbdx_connection	    **nbdx_conns;
 	char			      portal[MAX_PORTAL_NAME];
 	struct list_head	      list;
-	struct list_head	      devs_list; /* list of struct xnbd_file */
+	struct list_head	      devs_list; /* list of struct nbdx_file */
 	spinlock_t		      devs_lock;
 	struct kobject		     kobj;
 	struct completion	      conns_wait;
@@ -103,66 +103,66 @@ struct xnbd_session {
 	atomic_t		      destroy_conns_count;
 };
 
-struct xnbd_queue {
+struct nbdx_queue {
 	unsigned int		     queue_depth;
-	struct xnbd_connection	    *xnbd_conn;
-	struct xnbd_file	    *xdev; /* pointer to parent*/
+	struct nbdx_connection	    *nbdx_conn;
+	struct nbdx_file	    *xdev; /* pointer to parent*/
 };
 
-struct xnbd_file {
+struct nbdx_file {
 	int			     fd;
 	int			     major; /* major number from kernel */
 	struct r_stat64		     stbuf; /* remote file stats*/
 	char			     file_name[MAX_XNBD_DEV_NAME];
-	struct list_head	     list; /* next node in list of struct xnbd_file */
+	struct list_head	     list; /* next node in list of struct nbdx_file */
 	struct gendisk		    *disk;
 	struct request_queue	    *queue; /* The device request queue */
-	struct xnbd_queue	    *queues;
+	struct nbdx_queue	    *queues;
 	unsigned int		     queue_depth;
 	unsigned int		     nr_queues;
 	int			     index; /* drive idx */
 	char			     dev_name[MAX_XNBD_DEV_NAME];
-	struct xnbd_connection	    **xnbd_conns;
+	struct nbdx_connection	    **nbdx_conns;
 	struct kobject		    kobj;
 	spinlock_t		     state_lock;
-	enum xnbd_dev_state	     state;
+	enum nbdx_dev_state	     state;
 };
 
-extern struct list_head g_xnbd_sessions;
+extern struct list_head g_nbdx_sessions;
 extern struct mutex g_lock;
 extern int created_portals;
 extern int submit_queues;
-extern int xnbd_major;
-extern int xnbd_indexes;
+extern int nbdx_major;
+extern int nbdx_indexes;
 
-int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
+int nbdx_transfer(struct nbdx_file *xdev, char *buffer, unsigned long start,
 		  unsigned long len, int write, struct request *req,
-		  struct xnbd_queue *q);
-int xnbd_session_create(const char *portal);
-int xnbd_create_device(struct xnbd_session *blk_xnbd_session,
+		  struct nbdx_queue *q);
+int nbdx_session_create(const char *portal);
+int nbdx_create_device(struct nbdx_session *blk_nbdx_session,
 		       const char *xdev_name, struct kobject *p_kobj);
-void xnbd_destroy_device(struct xnbd_session *xnbd_session,
-                         struct xnbd_file *xnbd_file);
-int xnbd_create_sysfs_files(void);
-void xnbd_destroy_sysfs_files(void);
-int xnbd_create_portal_files(struct kobject *kobj);
-int xnbd_create_device_files(struct kobject *p_kobj,
+void nbdx_destroy_device(struct nbdx_session *nbdx_session,
+                         struct nbdx_file *nbdx_file);
+int nbdx_create_sysfs_files(void);
+void nbdx_destroy_sysfs_files(void);
+int nbdx_create_portal_files(struct kobject *kobj);
+int nbdx_create_device_files(struct kobject *p_kobj,
                              const char *dev_name, struct kobject *kobj);
-void xnbd_destroy_kobj(struct kobject *kobj);
-int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
+void nbdx_destroy_kobj(struct kobject *kobj);
+int nbdx_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
 		    unsigned long long *len);
-int xnbd_register_block_device(struct xnbd_file *xnbd_file);
-void xnbd_unregister_block_device(struct xnbd_file *xnbd_file);
-int xnbd_setup_queues(struct xnbd_file *xdev);
-void xnbd_destroy_queues(struct xnbd_file *xdev);
-struct xnbd_session *xnbd_session_find(struct list_head *s_data_list,
+int nbdx_register_block_device(struct nbdx_file *nbdx_file);
+void nbdx_unregister_block_device(struct nbdx_file *nbdx_file);
+int nbdx_setup_queues(struct nbdx_file *xdev);
+void nbdx_destroy_queues(struct nbdx_file *xdev);
+struct nbdx_session *nbdx_session_find(struct list_head *s_data_list,
 					    const char *host_name);
-struct xnbd_file *xnbd_file_find(struct xnbd_session *xnbd_session,
+struct nbdx_file *nbdx_file_find(struct nbdx_session *nbdx_session,
 				 const char *name);
-struct xnbd_session *xnbd_session_find_by_portal(struct list_head *s_data_list,
+struct nbdx_session *nbdx_session_find_by_portal(struct list_head *s_data_list,
 						 const char *portal);
-void xnbd_session_destroy(struct xnbd_session *xnbd_session);
-const char* xnbd_device_state_str(struct xnbd_file *dev);
+void nbdx_session_destroy(struct nbdx_session *nbdx_session);
+const char* nbdx_device_state_str(struct nbdx_file *dev);
 
 #endif  /* XNBD_H */
 

@@ -51,18 +51,18 @@ extern "C" {
 /*---------------------------------------------------------------------------*/
 struct timespec;
 struct stat64;
-struct xnbd_iocb;
+struct nbdx_iocb;
 
 /*---------------------------------------------------------------------------*/
 /* typedefs								     */
 /*---------------------------------------------------------------------------*/
-typedef struct xnbd_context *xnbd_context_t;
-typedef struct xnbd_mr *xnbd_mr_t;
+typedef struct nbdx_context *nbdx_context_t;
+typedef struct nbdx_mr *nbdx_mr_t;
 
 /*---------------------------------------------------------------------------*/
 /* enums								     */
 /*---------------------------------------------------------------------------*/
-enum xnbd_iocb_cmd {
+enum nbdx_iocb_cmd {
 	XNBD_CMD_PREAD		= 0,
 	XNBD_CMD_PWRITE		= 1,
 };
@@ -70,36 +70,36 @@ enum xnbd_iocb_cmd {
 /*---------------------------------------------------------------------------*/
 /* structs								     */
 /*---------------------------------------------------------------------------*/
-struct xnbd_iocb_common {
+struct nbdx_iocb_common {
 	void			*buf;
 	unsigned long long	nbytes;
 	long long		offset;
-	xnbd_mr_t		mr;
+	nbdx_mr_t		mr;
 	unsigned int		flags;
 	unsigned int		resfd;
 };	/* result code is the amount read or negative errno */
 
-struct xnbd_iocb {
+struct nbdx_iocb {
 	void			*data;  /* Return in the io completion event */
 	unsigned int		key;	/* For use in identifying io requests */
-	int			xnbd_fildes;
-	int			xnbd_lio_opcode;
+	int			nbdx_fildes;
+	int			nbdx_lio_opcode;
 	int			pad;
 	union {
-		struct xnbd_iocb_common	c;
+		struct nbdx_iocb_common	c;
 	} u;
 };
 
-struct xnbd_event {
+struct nbdx_event {
 	void			*data;  /* Return in the io completion event */
-	struct xnbd_iocb	*obj;
+	struct nbdx_iocb	*obj;
 	unsigned long long	handle; /* release handle */
 	unsigned long		res;
 	unsigned long		res2;
 };
 
 /**
- * xnbd_open - open file for io operations
+ * nbdx_open - open file for io operations
  *
  * @addr: address to rcopy server
  * @addrlen: address length
@@ -109,11 +109,11 @@ struct xnbd_event {
  * RETURNS: return the new file descriptor, or -1 if an error occurred (in
  * which case, errno is set appropriately)
  */
-int xnbd_open(const struct sockaddr *addr, socklen_t addrlen,
+int nbdx_open(const struct sockaddr *addr, socklen_t addrlen,
 	      const char *pathname, int flags);
 
 /**
- * xnbd_fstat - get file status
+ * nbdx_fstat - get file status
  *
  * @fd:	the file's file descriptor
  * @buf: the file stat structure
@@ -121,20 +121,20 @@ int xnbd_open(const struct sockaddr *addr, socklen_t addrlen,
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
  * is set appropriately.
  */
-int xnbd_fstat(int fd, struct stat64 *buf);
+int nbdx_fstat(int fd, struct stat64 *buf);
 
 /**
- * xnbd_close - close file or device
+ * nbdx_close - close file or device
  *
  * @fd:	the file's file descriptor
  *
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
  * is set appropriately.
  */
-int xnbd_close(int fd);
+int nbdx_close(int fd);
 
 /**
- * xnbd_setup - creates an asynchronous I/O context capable of receiving at
+ * nbdx_setup - creates an asynchronous I/O context capable of receiving at
  * most maxevents
  *
  * @fd:		file descriptor to work on
@@ -145,20 +145,20 @@ int xnbd_close(int fd);
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
  * is set appropriately.
  */
-int xnbd_setup(int fd, int maxevents, xnbd_context_t *ctxp);
+int nbdx_setup(int fd, int maxevents, nbdx_context_t *ctxp);
 
 /**
- * xnbd_destroy - destroys an asynchronous I/O context
+ * nbdx_destroy - destroys an asynchronous I/O context
  *
  * @ctx:	the XNBD context
  *
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
  * is set appropriately.
  */
-int xnbd_destroy(xnbd_context_t ctx);
+int nbdx_destroy(nbdx_context_t ctx);
 
 /**
- * xnbd_submit - queues nr I/O request blocks for processing in the XNBD
+ * nbdx_submit - queues nr I/O request blocks for processing in the XNBD
  *		 context ctx
  *
  * @ctx:	the XNBD context
@@ -168,10 +168,10 @@ int xnbd_destroy(xnbd_context_t ctx);
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
  * is set appropriately.
  */
-int xnbd_submit(xnbd_context_t ctx, long nr, struct xnbd_iocb *ios[]);
+int nbdx_submit(nbdx_context_t ctx, long nr, struct nbdx_iocb *ios[]);
 
 /**
- * xnbd_cancel - attempt to cancel an outstanding asynchronous I/O operation
+ * nbdx_cancel - attempt to cancel an outstanding asynchronous I/O operation
  *
  * @ctx:	the XNBD context ID of the operation to be canceled
  * @iocb:	control block to cancel
@@ -180,11 +180,11 @@ int xnbd_submit(xnbd_context_t ctx, long nr, struct xnbd_iocb *ios[]);
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
  * is set appropriately.
  */
-int xnbd_cancel(xnbd_context_t ctx, struct xnbd_iocb *iocb,
-		struct xnbd_event *evt);
+int nbdx_cancel(nbdx_context_t ctx, struct nbdx_iocb *iocb,
+		struct nbdx_event *evt);
 
 /**
- * xnbd_getevents - read asynchronous I/O events from the completion queue
+ * nbdx_getevents - read asynchronous I/O events from the completion queue
  *
  * @ctx:	the XNBD context ID
  * @min_nr:	at least min_nr to read
@@ -193,14 +193,14 @@ int xnbd_cancel(xnbd_context_t ctx, struct xnbd_iocb *iocb,
  * @timeout:	specifies the amount of time to wait for events, where a NULL
  *		timeout waits until at least min_nr events have been seen.
  *
- * RETURNS: On  success,  xnbd_getevents()  returns  the number of events read:
+ * RETURNS: On  success,  nbdx_getevents()  returns  the number of events read:
  * 0 if no events are available, or less than min_nr if the timeout has elapsed.
  */
-int xnbd_getevents(xnbd_context_t ctx, long min_nr, long nr,
-		   struct xnbd_event *events, struct timespec *timeout);
+int nbdx_getevents(nbdx_context_t ctx, long min_nr, long nr,
+		   struct nbdx_event *events, struct timespec *timeout);
 
 /**
- * xnbd_release - release xnbd resources when events is no longer needed
+ * nbdx_release - release nbdx resources when events is no longer needed
  *
  * @ctx:	the XNBD context ID
  * @nr:		number of events to release
@@ -209,10 +209,10 @@ int xnbd_getevents(xnbd_context_t ctx, long min_nr, long nr,
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
  * is set appropriately.
  */
-int xnbd_release(xnbd_context_t ctx, long nr, struct xnbd_event *events);
+int nbdx_release(nbdx_context_t ctx, long nr, struct nbdx_event *events);
 
 /**
- * xnbd_reg_mr - register memory region for rdma operations
+ * nbdx_reg_mr - register memory region for rdma operations
  *
  * @ctx:	the XNBD context ID
  * @buf:	pointer to memory buffer
@@ -222,10 +222,10 @@ int xnbd_release(xnbd_context_t ctx, long nr, struct xnbd_event *events);
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
  * is set appropriately.
  */
-int xnbd_reg_mr(xnbd_context_t ctx, void *buf, size_t len, xnbd_mr_t *mr);
+int nbdx_reg_mr(nbdx_context_t ctx, void *buf, size_t len, nbdx_mr_t *mr);
 
 /**
- * xnbd_dereg_mr - deregister memory region
+ * nbdx_dereg_mr - deregister memory region
  *
  * @ctx:	the XNBD context ID
  * @mr:		the memory region
@@ -233,36 +233,36 @@ int xnbd_reg_mr(xnbd_context_t ctx, void *buf, size_t len, xnbd_mr_t *mr);
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
  * is set appropriately.
  */
-int xnbd_dereg_mr(xnbd_context_t ctx, xnbd_mr_t mr);
+int nbdx_dereg_mr(nbdx_context_t ctx, nbdx_mr_t mr);
 
 
-static inline void xnbd_prep_pread(struct xnbd_iocb *iocb, int fd, void *buf,
+static inline void nbdx_prep_pread(struct nbdx_iocb *iocb, int fd, void *buf,
 				   size_t count, long long offset,
-				   xnbd_mr_t mr)
+				   nbdx_mr_t mr)
 {
 	memset(iocb, 0, sizeof(*iocb));
-	iocb->xnbd_fildes = fd;
-	iocb->xnbd_lio_opcode = XNBD_CMD_PREAD;
+	iocb->nbdx_fildes = fd;
+	iocb->nbdx_lio_opcode = XNBD_CMD_PREAD;
 	iocb->u.c.buf = buf;
 	iocb->u.c.nbytes = count;
 	iocb->u.c.offset = offset;
 	iocb->u.c.mr = mr;
 }
 
-static inline void xnbd_prep_pwrite(struct xnbd_iocb *iocb, int fd, void *buf,
+static inline void nbdx_prep_pwrite(struct nbdx_iocb *iocb, int fd, void *buf,
 				    size_t count, long long offset,
-				    xnbd_mr_t mr)
+				    nbdx_mr_t mr)
 {
 	memset(iocb, 0, sizeof(*iocb));
-	iocb->xnbd_fildes = fd;
-	iocb->xnbd_lio_opcode = XNBD_CMD_PWRITE;
+	iocb->nbdx_fildes = fd;
+	iocb->nbdx_lio_opcode = XNBD_CMD_PWRITE;
 	iocb->u.c.buf = buf;
 	iocb->u.c.nbytes = count;
 	iocb->u.c.offset = offset;
 	iocb->u.c.mr = mr;
 }
 
-static inline void xnbd_set_eventfd(struct xnbd_iocb *iocb, int eventfd)
+static inline void nbdx_set_eventfd(struct nbdx_iocb *iocb, int eventfd)
 {
 	iocb->u.c.flags |= (1 << 0) /* XNBDCB_FLAG_RESFD */;
 	iocb->u.c.resfd = eventfd;

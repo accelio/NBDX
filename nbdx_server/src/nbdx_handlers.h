@@ -35,138 +35,44 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#include <stdio.h>
-#include <string.h>
-#include <stdlib.h>
-#include <stdint.h>
-#include "libxnbd.h"
-#include "xnbd_bs.h"
+#ifndef XNBD_HANDLERS_H
+#define XNBD_HANDLERS_H
+
+struct nbdx_command;
 
 /*---------------------------------------------------------------------------*/
-/* globals								     */
+/* nbdx_handler_init_session_data				             */
 /*---------------------------------------------------------------------------*/
-static SLIST_HEAD(, backingstore_template) bst_list =
-	SLIST_HEAD_INITIALIZER(bst_list);
-
+void	*nbdx_handler_init_session_data(int portals_nr);
 
 /*---------------------------------------------------------------------------*/
-/* register_backingstore_template					     */
+/* nbdx_handler_init_portal_data				             */
 /*---------------------------------------------------------------------------*/
-int register_backingstore_template(struct backingstore_template *bst)
-{
-	SLIST_INSERT_HEAD(&bst_list, bst, backingstore_siblings);
-
-	return 0;
-}
+void	*nbdx_handler_init_portal_data(void *prv_session_data,
+				       int portal_nr, void *loop);
 
 /*---------------------------------------------------------------------------*/
-/* get_backingstore_template						     */
+/* nbdx_handler_free_session_data				             */
 /*---------------------------------------------------------------------------*/
-struct backingstore_template *get_backingstore_template(const char *name)
-{
-	struct backingstore_template *bst;
-
-	SLIST_FOREACH(bst, &bst_list, backingstore_siblings) {
-		if (!strcmp(name, bst->bs_name))
-			return bst;
-	}
-	return NULL;
-}
-
-extern void xnbd_bs_aio_constructor(void);
-extern void xnbd_bs_null_constructor(void);
+void	nbdx_handler_free_session_data(void *prv_session_data);
 
 /*---------------------------------------------------------------------------*/
-/* register_backingstores						     */
+/* nbdx_handler_free_portal_data				             */
 /*---------------------------------------------------------------------------*/
-static void register_backingstores(void)
-{
-	if (SLIST_EMPTY(&bst_list)) {
-		xnbd_bs_aio_constructor();
-		xnbd_bs_null_constructor();
-	}
-}
+void	nbdx_handler_free_portal_data(void *prv_portal_data);
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_init								     */
+/* rai_handler_on_req				                             */
 /*---------------------------------------------------------------------------*/
-struct xnbd_bs *xnbd_bs_init(void *ctx, const char *name)
-{
-	struct xnbd_bs			*dev = NULL;
-	struct backingstore_template	*bst;
-
-	register_backingstores();
-
-	bst = get_backingstore_template(name);
-	if (bst == NULL) {
-		fprintf(stderr, "backingstore does not exist name:%s\n", name);
-		goto cleanup;
-	}
-
-	dev = calloc(1, sizeof(*dev)+bst->bs_datasize);
-	if (dev == NULL) {
-		fprintf(stderr, "calloc failed\n");
-		goto cleanup;
-	}
-
-	dev->dd		= ((char *)dev) + sizeof(*dev);
-	dev->bst	= bst;
-	dev->ctx	= ctx;
-
-	if (dev->bst->bs_init) {
-		int retval = dev->bst->bs_init(dev);
-		if (retval != 0)
-			goto cleanup;
-	}
-	return dev;
-
-cleanup:
-	free(dev);
-	return NULL;
-}
+int	nbdx_handler_on_req(void *prv_session_data,
+			    void *prv_portal_data,
+			    struct xio_msg *req);
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_exit								     */
+/* nbdx_handler_on_rsp_comp				                     */
 /*---------------------------------------------------------------------------*/
-void xnbd_bs_exit(struct xnbd_bs *dev)
-{
-	if (dev->bst->bs_exit)
-		dev->bst->bs_exit(dev);
-	free(dev);
-}
+void	nbdx_handler_on_rsp_comp(void *prv_session_data,
+				 void *prv_portal_data,
+				 struct xio_msg *rsp);
 
-/*---------------------------------------------------------------------------*/
-/* xnbd_bs_open								     */
-/*---------------------------------------------------------------------------*/
-int xnbd_bs_open(struct xnbd_bs *dev, int fd)
-{
-	if (dev->bst->bs_open) {
-		int retval = dev->bst->bs_open(dev, fd);
-		if (retval == 0)
-			dev->fd = fd;
-		return retval;
-	}
-	return 0;
-}
-
-/*---------------------------------------------------------------------------*/
-/* xnbd_bs_close							     */
-/*---------------------------------------------------------------------------*/
-void xnbd_bs_close(struct xnbd_bs *dev)
-{
-	if (dev->bst->bs_close)
-		dev->bst->bs_close(dev);
-}
-
-/*---------------------------------------------------------------------------*/
-/* xnbd_bs_cmd_submit							     */
-/*---------------------------------------------------------------------------*/
-int xnbd_bs_cmd_submit(struct xnbd_bs *dev, struct xnbd_io_cmd *cmd)
-{
-	if (dev->bst->bs_cmd_submit)
-		return dev->bst->bs_cmd_submit(dev, cmd);
-
-	return 0;
-}
-
-
+#endif

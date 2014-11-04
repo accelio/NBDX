@@ -48,12 +48,12 @@
 #include <fcntl.h>
 #include "libxio.h"
 
-#include "xnbd_buffer.h"
-#include "xnbd_command.h"
-#include "xnbd_handlers.h"
-#include "xnbd_utils.h"
-#include "xnbd_bs.h"
-#include "libxnbd.h"
+#include "nbdx_buffer.h"
+#include "nbdx_command.h"
+#include "nbdx_handlers.h"
+#include "nbdx_utils.h"
+#include "nbdx_bs.h"
+#include "libnbdx.h"
 #include "msg_pool.h"
 
 /*---------------------------------------------------------------------------*/
@@ -75,44 +75,44 @@
 /*---------------------------------------------------------------------------*/
 /* data structres				                             */
 /*---------------------------------------------------------------------------*/
-struct xnbd_io_u {
-	struct xnbd_event		ev_data;
+struct nbdx_io_u {
+	struct nbdx_event		ev_data;
 	struct xio_msg			*rsp;
 	void 				*buf;
-	struct xnbd_io_cmd		iocmd;
+	struct nbdx_io_cmd		iocmd;
 
-	TAILQ_ENTRY(xnbd_io_u)		io_u_list;
+	TAILQ_ENTRY(nbdx_io_u)		io_u_list;
 };
 
-struct xnbd_io_portal_data {
-	TAILQ_HEAD(, xnbd_bs)       dev_list;
+struct nbdx_io_portal_data {
+	TAILQ_HEAD(, nbdx_bs)       dev_list;
 	int             ndevs;
 	int				iodepth;
 	int				io_nr;
 	int				io_u_free_nr;
-	struct xnbd_io_u		*io_us_free;
+	struct nbdx_io_u		*io_us_free;
 	struct xio_msg			rsp;
 	struct xio_msg			close_rsp;
 	struct msg_pool			*rsp_pool;
 	struct xio_context		*ctx;
 	char				rsp_hdr[512];
 
-	TAILQ_HEAD(, xnbd_io_u)		io_u_free_list;
+	TAILQ_HEAD(, nbdx_io_u)		io_u_free_list;
 };
 
-struct xnbd_io_session_data {
+struct nbdx_io_session_data {
 	int				portals_nr;
 	int				pad;
 
-	struct xnbd_io_portal_data	*pd;
+	struct nbdx_io_portal_data	*pd;
 };
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_lookup_bs_dev                                   */
+/* nbdx_lookup_bs_dev                                   */
 /*---------------------------------------------------------------------------*/
-struct xnbd_bs *xnbd_lookup_bs_dev(int fd, struct xnbd_io_portal_data *pd)
+struct nbdx_bs *nbdx_lookup_bs_dev(int fd, struct nbdx_io_portal_data *pd)
 {
-   struct xnbd_bs      *bs_dev;
+   struct nbdx_bs      *bs_dev;
 
    TAILQ_FOREACH(bs_dev, &pd->dev_list, list) {
        if (bs_dev->fd == fd) {
@@ -123,11 +123,11 @@ struct xnbd_bs *xnbd_lookup_bs_dev(int fd, struct xnbd_io_portal_data *pd)
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handler_init_session_data				             */
+/* nbdx_handler_init_session_data				             */
 /*---------------------------------------------------------------------------*/
-void *xnbd_handler_init_session_data(int portals_nr)
+void *nbdx_handler_init_session_data(int portals_nr)
 {
-	struct xnbd_io_session_data *sd;
+	struct nbdx_io_session_data *sd;
 	sd = calloc(1, sizeof(*sd));
 
 	sd->pd		= calloc(portals_nr, sizeof(*sd->pd));
@@ -137,13 +137,13 @@ void *xnbd_handler_init_session_data(int portals_nr)
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handler_init_portal_data				             */
+/* nbdx_handler_init_portal_data				             */
 /*---------------------------------------------------------------------------*/
-void *xnbd_handler_init_portal_data(void *prv_session_data,
+void *nbdx_handler_init_portal_data(void *prv_session_data,
 				    int portal_nr, void *ctx)
 {
-	struct xnbd_io_session_data *sd = prv_session_data;
-	struct xnbd_io_portal_data *pd = &sd->pd[portal_nr];
+	struct nbdx_io_session_data *sd = prv_session_data;
+	struct nbdx_io_portal_data *pd = &sd->pd[portal_nr];
 
 	pd->ctx = ctx;
 	pd->rsp.out.header.iov_base = pd->rsp_hdr;
@@ -155,29 +155,29 @@ void *xnbd_handler_init_portal_data(void *prv_session_data,
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handler_free_session_data				             */
+/* nbdx_handler_free_session_data				             */
 /*---------------------------------------------------------------------------*/
-void xnbd_handler_free_session_data(void *prv_session_data)
+void nbdx_handler_free_session_data(void *prv_session_data)
 {
-	struct xnbd_io_session_data *sd = prv_session_data;
+	struct nbdx_io_session_data *sd = prv_session_data;
 	free(sd->pd);
 
 	free(sd);
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handler_free_portal_data				             */
+/* nbdx_handler_free_portal_data				             */
 /*---------------------------------------------------------------------------*/
-void xnbd_handler_free_portal_data(void *prv_portal_data)
+void nbdx_handler_free_portal_data(void *prv_portal_data)
 {
-	struct xnbd_io_portal_data	*pd = prv_portal_data;
-	struct xnbd_bs      *bs_dev, *tmp;
+	struct nbdx_io_portal_data	*pd = prv_portal_data;
+	struct nbdx_bs      *bs_dev, *tmp;
 
 	TAILQ_FOREACH_SAFE(bs_dev, &pd->dev_list, list, tmp) {
 		if (!bs_dev->is_null) {
 			close(bs_dev->fd);
-			xnbd_bs_close(bs_dev);
-			xnbd_bs_exit(bs_dev);
+			nbdx_bs_close(bs_dev);
+			nbdx_bs_exit(bs_dev);
 		}
 		TAILQ_REMOVE(&pd->dev_list, bs_dev, list);
 	}
@@ -185,16 +185,16 @@ void xnbd_handler_free_portal_data(void *prv_portal_data)
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handle_open				                             */
+/* nbdx_handle_open				                             */
 /*---------------------------------------------------------------------------*/
-static int xnbd_handle_open(void *prv_session_data,
+static int nbdx_handle_open(void *prv_session_data,
 			    void *prv_portal_data,
-			    struct xnbd_command *cmd,
+			    struct nbdx_command *cmd,
 			    char *cmd_data,
 			    struct xio_msg *req)
 {
-	struct xnbd_io_session_data	*sd = prv_session_data;
-	struct xnbd_io_portal_data	*pd = prv_portal_data;
+	struct nbdx_io_session_data	*sd = prv_session_data;
+	struct nbdx_io_portal_data	*pd = prv_portal_data;
 	const char	*pathname;
 	uint32_t	flags = 0;
 	unsigned	overall_size;
@@ -226,19 +226,19 @@ static int xnbd_handle_open(void *prv_session_data,
 	}
 
 	for (i = 0; i < sd->portals_nr; i++) {
-		struct xnbd_bs *bs_dev;
-	    struct xnbd_io_portal_data  *cpd;
+		struct nbdx_bs *bs_dev;
+	    struct nbdx_io_portal_data  *cpd;
 
 	    cpd = &sd->pd[i];
 	    if (is_null) {
-		    bs_dev = xnbd_bs_init(cpd->ctx, "null");
+		    bs_dev = nbdx_bs_init(cpd->ctx, "null");
 		    bs_dev->is_null = 1;
 	    } else {
-		    bs_dev = xnbd_bs_init(cpd->ctx, "aio");
+		    bs_dev = nbdx_bs_init(cpd->ctx, "aio");
 		    bs_dev->is_null = 0;
 	    }
 
-	   errno = -xnbd_bs_open(bs_dev, fd);
+	   errno = -nbdx_bs_open(bs_dev, fd);
 	   if (errno)
 		   break;
 
@@ -248,7 +248,7 @@ static int xnbd_handle_open(void *prv_session_data,
 
 reject:
 	if (fd == -1 || errno) {
-		struct xnbd_answer ans = {XNBD_CMD_OPEN, 0,
+		struct nbdx_answer ans = {XNBD_CMD_OPEN, 0,
 					   -1, errno};
 		pack_u32((uint32_t *)&ans.ret_errno,
 			 pack_u32((uint32_t *)&ans.ret,
@@ -258,7 +258,7 @@ reject:
 		fprintf(stderr, "open %s failed %m\n", pathname);
 	 } else {
 		 unsigned overall_size = sizeof(fd);
-		 struct xnbd_answer ans = {XNBD_CMD_OPEN,
+		 struct nbdx_answer ans = {XNBD_CMD_OPEN,
 					   overall_size, 0, 0};
 		 pack_u32((uint32_t *)&fd,
 			  pack_u32((uint32_t *)&ans.ret_errno,
@@ -268,7 +268,7 @@ reject:
 			  pd->rsp_hdr)))));
 	 }
 
-	pd->rsp.out.header.iov_len = (sizeof(struct xnbd_answer) +
+	pd->rsp.out.header.iov_len = (sizeof(struct nbdx_answer) +
 				     overall_size);
 
 	pd->rsp.request = req;
@@ -279,18 +279,18 @@ reject:
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handle_close				                             */
+/* nbdx_handle_close				                             */
 /*---------------------------------------------------------------------------*/
-static int xnbd_handle_close(void *prv_session_data,
+static int nbdx_handle_close(void *prv_session_data,
 			     void *prv_portal_data,
-			     struct xnbd_command *cmd,
+			     struct nbdx_command *cmd,
 			     char *cmd_data,
 			     struct xio_msg *req)
 {
-	struct xnbd_io_session_data	*sd = prv_session_data;
-	struct xnbd_io_portal_data	*pd = prv_portal_data;
-	struct xnbd_io_portal_data  *cpd;
-	struct xnbd_bs *bs_dev;
+	struct nbdx_io_session_data	*sd = prv_session_data;
+	struct nbdx_io_portal_data	*pd = prv_portal_data;
+	struct nbdx_io_portal_data  *cpd;
+	struct nbdx_bs *bs_dev;
 	int				fd;
 	int				i, retval = 0;
 
@@ -304,7 +304,7 @@ static int xnbd_handle_close(void *prv_session_data,
 		goto reject;
 	}
 
-	bs_dev = xnbd_lookup_bs_dev(fd, pd);
+	bs_dev = nbdx_lookup_bs_dev(fd, pd);
 	/* close fd only once */
 	if (!bs_dev->is_null) {
 		retval = close(bs_dev->fd);
@@ -314,24 +314,24 @@ static int xnbd_handle_close(void *prv_session_data,
 
 	for (i = 0; i < sd->portals_nr; i++) {
 		cpd = &sd->pd[i];
-		bs_dev = xnbd_lookup_bs_dev(fd, cpd);
+		bs_dev = nbdx_lookup_bs_dev(fd, cpd);
 		TAILQ_REMOVE(&cpd->dev_list, bs_dev, list);
 		if (!bs_dev->is_null) {
-			xnbd_bs_close(bs_dev);
-			xnbd_bs_exit(bs_dev);
+			nbdx_bs_close(bs_dev);
+			nbdx_bs_exit(bs_dev);
 		}
 	}
 
 reject:
 	if (retval != 0) {
-		struct xnbd_answer ans = { XNBD_CMD_CLOSE, 0, -1, errno };
+		struct nbdx_answer ans = { XNBD_CMD_CLOSE, 0, -1, errno };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
 		pack_u32(&ans.command,
 			 pd->rsp_hdr))));
 	} else {
-		struct xnbd_answer ans = { XNBD_CMD_CLOSE, 0, 0, 0 };
+		struct nbdx_answer ans = { XNBD_CMD_CLOSE, 0, 0, 0 };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
@@ -339,7 +339,7 @@ reject:
 			 pd->rsp_hdr))));
 	 }
 
-	pd->rsp.out.header.iov_len = sizeof(struct xnbd_answer);
+	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer);
 
 	pd->rsp.request = req;
 
@@ -349,18 +349,18 @@ reject:
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handle_fstat				                             */
+/* nbdx_handle_fstat				                             */
 /*---------------------------------------------------------------------------*/
-static int xnbd_handle_fstat(void *prv_session_data,
+static int nbdx_handle_fstat(void *prv_session_data,
 			     void *prv_portal_data,
-			     struct xnbd_command *cmd,
+			     struct nbdx_command *cmd,
 			     char *cmd_data,
 			     struct xio_msg *req)
 {
-	struct xnbd_io_portal_data	*pd = prv_portal_data;
+	struct nbdx_io_portal_data	*pd = prv_portal_data;
 	int				fd;
 	int				retval = 0;
-	struct xnbd_bs          *bs_dev;
+	struct nbdx_bs          *bs_dev;
 
 	unpack_u32((uint32_t *)&fd,
 		    cmd_data);
@@ -372,7 +372,7 @@ static int xnbd_handle_fstat(void *prv_session_data,
 		goto reject;
 	}
 
-	bs_dev = xnbd_lookup_bs_dev(fd, pd);
+	bs_dev = nbdx_lookup_bs_dev(fd, pd);
 	if (!bs_dev) {
 		printf("%s: Ambigiuous device file descriptor %d\n", __func__, fd);
 		retval = -1;
@@ -382,14 +382,14 @@ static int xnbd_handle_fstat(void *prv_session_data,
 
 reject:
 	if (retval != 0) {
-		struct xnbd_answer ans = { XNBD_CMD_FSTAT, 0, -1, errno };
+		struct nbdx_answer ans = { XNBD_CMD_FSTAT, 0, -1, errno };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
 		pack_u32(&ans.command,
 			  pd->rsp_hdr))));
 	} else {
-		struct xnbd_answer ans = {XNBD_CMD_FSTAT,
+		struct nbdx_answer ans = {XNBD_CMD_FSTAT,
 					  STAT_BLOCK_SIZE, 0, 0};
 		pack_stat64(&bs_dev->stbuf,
 		pack_u32((uint32_t *)&ans.ret_errno,
@@ -399,7 +399,7 @@ reject:
 			 pd->rsp_hdr)))));
 	}
 
-	pd->rsp.out.header.iov_len = sizeof(struct xnbd_answer) +
+	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer) +
 				     STAT_BLOCK_SIZE;
 
 	pd->rsp.request = req;
@@ -410,19 +410,19 @@ reject:
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handle_setup				                             */
+/* nbdx_handle_setup				                             */
 /*---------------------------------------------------------------------------*/
-static int xnbd_handle_setup(void *prv_session_data,
+static int nbdx_handle_setup(void *prv_session_data,
 			     void *prv_portal_data,
-			     struct xnbd_command *cmd,
+			     struct nbdx_command *cmd,
 			     char *cmd_data,
 			     struct xio_msg *req)
 {
 	int				i, j, err = 0;
 	uint32_t			iodepth;
-	struct xnbd_io_session_data	*sd = prv_session_data;
-	struct xnbd_io_portal_data	*pd = prv_portal_data;
-	struct xnbd_io_portal_data	*cpd;
+	struct nbdx_io_session_data	*sd = prv_session_data;
+	struct nbdx_io_portal_data	*pd = prv_portal_data;
+	struct nbdx_io_portal_data	*cpd;
 
 
 	if (sizeof(int) != cmd->data_len) {
@@ -438,7 +438,7 @@ static int xnbd_handle_setup(void *prv_session_data,
 		/* divide remote iodepth between server resources */
 		cpd->iodepth = (iodepth / sd->portals_nr) + 1;
 		cpd->io_u_free_nr = cpd->iodepth + EXTRA_MSGS;
-		cpd->io_us_free = calloc(cpd->io_u_free_nr, sizeof(struct xnbd_io_u));
+		cpd->io_us_free = calloc(cpd->io_u_free_nr, sizeof(struct nbdx_io_u));
 		cpd->rsp_pool = msg_pool_create(512, MAXBLOCKSIZE, cpd->io_u_free_nr);
 		TAILQ_INIT(&cpd->io_u_free_list);
 
@@ -454,14 +454,14 @@ static int xnbd_handle_setup(void *prv_session_data,
 
 reject:
 	if (err) {
-		struct xnbd_answer ans = { XNBD_CMD_IO_SETUP, 0, -1, err };
+		struct nbdx_answer ans = { XNBD_CMD_IO_SETUP, 0, -1, err };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
 		pack_u32(&ans.command,
 			 pd->rsp_hdr))));
 	} else {
-		struct xnbd_answer ans = { XNBD_CMD_IO_SETUP, 0, 0, 0 };
+		struct nbdx_answer ans = { XNBD_CMD_IO_SETUP, 0, 0, 0 };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
@@ -469,7 +469,7 @@ reject:
 			pd->rsp_hdr))));
 	 }
 
-	pd->rsp.out.header.iov_len = sizeof(struct xnbd_answer);
+	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer);
 	pd->rsp.request = req;
 
 	xio_send_response(&pd->rsp);
@@ -478,17 +478,17 @@ reject:
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handle_destroy				                             */
+/* nbdx_handle_destroy				                             */
 /*---------------------------------------------------------------------------*/
-static int xnbd_handle_destroy(void *prv_session_data,
+static int nbdx_handle_destroy(void *prv_session_data,
 			       void *prv_portal_data,
-			       struct xnbd_command *cmd,
+			       struct nbdx_command *cmd,
 			       char *cmd_data,
 			       struct xio_msg *req)
 {
-	struct xnbd_io_session_data	*sd = prv_session_data;
-	struct xnbd_io_portal_data	*pd = prv_portal_data;
-	struct xnbd_io_portal_data	*cpd;
+	struct nbdx_io_session_data	*sd = prv_session_data;
+	struct nbdx_io_portal_data	*pd = prv_portal_data;
+	struct nbdx_io_portal_data	*cpd;
 	int				i, j;
 	int				retval = 0;
 
@@ -517,14 +517,14 @@ static int xnbd_handle_destroy(void *prv_session_data,
 
 reject:
 	if (retval == -1) {
-		struct xnbd_answer ans = { XNBD_CMD_IO_DESTROY, 0, -1, errno };
+		struct nbdx_answer ans = { XNBD_CMD_IO_DESTROY, 0, -1, errno };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
 		pack_u32(&ans.command,
 			 pd->rsp_hdr))));
 	} else {
-		struct xnbd_answer ans = { XNBD_CMD_IO_DESTROY, 0, 0, 0 };
+		struct nbdx_answer ans = { XNBD_CMD_IO_DESTROY, 0, 0, 0 };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
@@ -532,7 +532,7 @@ reject:
 			 pd->rsp_hdr))));
 	}
 
-	pd->rsp.out.header.iov_len = sizeof(struct xnbd_answer);
+	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer);
 	pd->rsp.request = req;
 
 	xio_send_response(&pd->rsp);
@@ -541,24 +541,24 @@ reject:
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_reject_request				                             */
+/* nbdx_reject_request				                             */
 /*---------------------------------------------------------------------------*/
-int xnbd_reject_request(void *prv_session_data,
+int nbdx_reject_request(void *prv_session_data,
 			void *prv_portal_data,
-			struct xnbd_command *cmd,
+			struct nbdx_command *cmd,
 			char *cmd_data,
 			struct xio_msg *req)
 {
-	struct xnbd_io_portal_data	*pd = prv_portal_data;
+	struct nbdx_io_portal_data	*pd = prv_portal_data;
 
-	struct xnbd_answer ans = { XNBD_CMD_UNKNOWN, 0, -1, errno };
+	struct nbdx_answer ans = { XNBD_CMD_UNKNOWN, 0, -1, errno };
 	pack_u32((uint32_t *)&ans.ret_errno,
 	pack_u32((uint32_t *)&ans.ret,
 	pack_u32(&ans.data_len,
 	pack_u32(&ans.command,
 		 pd->rsp_hdr))));
 
-	pd->rsp.out.header.iov_len = sizeof(struct xnbd_answer);
+	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer);
 	pd->rsp.out.data_iovlen = 0;
 	pd->rsp.request = req;
 
@@ -570,10 +570,10 @@ int xnbd_reject_request(void *prv_session_data,
 /*---------------------------------------------------------------------------*/
 /* on_cmd_submit_comp				                             */
 /*---------------------------------------------------------------------------*/
-static int on_cmd_submit_comp(struct xnbd_io_cmd *iocmd)
+static int on_cmd_submit_comp(struct nbdx_io_cmd *iocmd)
 {
-	struct xnbd_io_u	*io_u = iocmd->user_context;
-	struct xnbd_answer	ans = { XNBD_CMD_IO_SUBMIT, 0, 0, 0 };
+	struct nbdx_io_u	*io_u = iocmd->user_context;
+	struct nbdx_answer	ans = { XNBD_CMD_IO_SUBMIT, 0, 0, 0 };
 
 	pack_u32((uint32_t *)&iocmd->res2,
 	pack_u32((uint32_t *)&iocmd->res,
@@ -583,7 +583,7 @@ static int on_cmd_submit_comp(struct xnbd_io_cmd *iocmd)
 	pack_u32(&ans.command,
 	io_u->rsp->out.header.iov_base))))));
 
-	io_u->rsp->out.header.iov_len = sizeof(struct xnbd_answer) +
+	io_u->rsp->out.header.iov_len = sizeof(struct nbdx_answer) +
 					2*sizeof(uint32_t);
 
 	if ( io_u->iocmd.op == XNBD_CMD_PREAD) {
@@ -608,19 +608,19 @@ static int on_cmd_submit_comp(struct xnbd_io_cmd *iocmd)
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handle_submit				                             */
+/* nbdx_handle_submit				                             */
 /*---------------------------------------------------------------------------*/
-static int xnbd_handle_submit(void *prv_session_data,
+static int nbdx_handle_submit(void *prv_session_data,
 			      void *prv_portal_data,
-			      struct xnbd_command *cmd,
+			      struct nbdx_command *cmd,
 			      char *cmd_data,
 			      struct xio_msg *req)
 {
-	struct xnbd_io_portal_data	*pd = prv_portal_data;
-	struct xnbd_io_u		*io_u;
-	struct xnbd_iocb		iocb;
-	struct xnbd_bs          *bs_dev;
-	struct xnbd_answer		ans;
+	struct nbdx_io_portal_data	*pd = prv_portal_data;
+	struct nbdx_io_u		*io_u;
+	struct nbdx_iocb		iocb;
+	struct nbdx_bs          *bs_dev;
+	struct nbdx_answer		ans;
 	int				retval = 0;
 	uint32_t			is_last_in_batch;
 	uint32_t			msg_sz = SUBMIT_BLOCK_SIZE +
@@ -647,8 +647,8 @@ static int xnbd_handle_submit(void *prv_session_data,
 	unpack_u32(&is_last_in_batch,
 		   cmd_data));
 
-	io_u->iocmd.fd			= iocb.xnbd_fildes;
-	io_u->iocmd.op			= iocb.xnbd_lio_opcode;
+	io_u->iocmd.fd			= iocb.nbdx_fildes;
+	io_u->iocmd.op			= iocb.nbdx_lio_opcode;
 	io_u->iocmd.bcount		= iocb.u.c.nbytes;
 
 	if ( io_u->iocmd.op == XNBD_CMD_PWRITE) {
@@ -659,7 +659,7 @@ static int xnbd_handle_submit(void *prv_session_data,
 		io_u->iocmd.mr			= io_u->rsp->out.data_iov[0].mr;
 	}
 
-	bs_dev = xnbd_lookup_bs_dev(io_u->iocmd.fd, pd);
+	bs_dev = nbdx_lookup_bs_dev(io_u->iocmd.fd, pd);
 	if (!bs_dev) {
 		printf("Ambigiuous device file descriptor %d\n", io_u->iocmd.fd);
 		errno = ENODEV;
@@ -679,7 +679,7 @@ static int xnbd_handle_submit(void *prv_session_data,
 
 
 	/* issues request to bs */
-	retval = -xnbd_bs_cmd_submit(bs_dev, &io_u->iocmd);
+	retval = -nbdx_bs_cmd_submit(bs_dev, &io_u->iocmd);
 	if (retval)
 		goto reject;
 
@@ -700,7 +700,7 @@ reject:
 	pack_u32(&ans.command,
 		 pd->rsp_hdr))));
 
-	pd->rsp.out.header.iov_len = sizeof(struct xnbd_answer);
+	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer);
 	pd->rsp.request = req;
 
 	xio_send_response(&pd->rsp);
@@ -709,14 +709,14 @@ reject:
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handle_submit_comp				                     */
+/* nbdx_handle_submit_comp				                     */
 /*---------------------------------------------------------------------------*/
-static int xnbd_handle_submit_comp(void *prv_session_data,
+static int nbdx_handle_submit_comp(void *prv_session_data,
 				   void *prv_portal_data,
 				   struct xio_msg *rsp)
 {
-	struct xnbd_io_portal_data *pd = prv_portal_data;
-	struct xnbd_io_u	   *io_u = rsp->user_context;
+	struct nbdx_io_portal_data *pd = prv_portal_data;
+	struct nbdx_io_u	   *io_u = rsp->user_context;
 
 	if (io_u) {
 		rsp->out.data_iov[0].iov_base = io_u->buf;
@@ -728,20 +728,20 @@ static int xnbd_handle_submit_comp(void *prv_session_data,
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handler_on_req				                             */
+/* nbdx_handler_on_req				                             */
 /*---------------------------------------------------------------------------*/
-int xnbd_handler_on_req(void *prv_session_data,
+int nbdx_handler_on_req(void *prv_session_data,
 			 void *prv_portal_data,
 			 struct xio_msg *req)
 {
 	char			*buffer = req->in.header.iov_base;
 	char			*cmd_data;
-	struct xnbd_command	cmd;
+	struct nbdx_command	cmd;
 	int			disconnect = 0;
 
 
 	if (buffer == NULL) {
-		xnbd_reject_request(prv_session_data,
+		nbdx_reject_request(prv_session_data,
 				    prv_portal_data,
 				    &cmd, NULL,
 				    req);
@@ -755,39 +755,39 @@ int xnbd_handler_on_req(void *prv_session_data,
 
 	switch (cmd.command) {
 	case XNBD_CMD_IO_SUBMIT:
-		xnbd_handle_submit(prv_session_data,
+		nbdx_handle_submit(prv_session_data,
 				   prv_portal_data,
 				   &cmd, cmd_data,
 				   req);
 		break;
 	case XNBD_CMD_OPEN:
-		xnbd_handle_open(prv_session_data,
+		nbdx_handle_open(prv_session_data,
 				 prv_portal_data,
 				 &cmd, cmd_data,
 				 req);
 		break;
 	case XNBD_CMD_CLOSE:
-		xnbd_handle_close(prv_session_data,
+		nbdx_handle_close(prv_session_data,
 				  prv_portal_data,
 				  &cmd, cmd_data,
 				  req);
 		break;
 	case XNBD_CMD_FSTAT:
-		xnbd_handle_fstat(prv_session_data,
+		nbdx_handle_fstat(prv_session_data,
 				  prv_portal_data,
 				  &cmd, cmd_data,
 				  req);
 		break;
 	case XNBD_CMD_IO_SETUP:
 		/* Once per Session */
-		xnbd_handle_setup(prv_session_data,
+		nbdx_handle_setup(prv_session_data,
 				  prv_portal_data,
 				  &cmd, cmd_data,
 				  req);
 		break;
 	case XNBD_CMD_IO_DESTROY:
 		/* Once per Session */
-		xnbd_handle_destroy(prv_session_data,
+		nbdx_handle_destroy(prv_session_data,
 				    prv_portal_data,
 				    &cmd, cmd_data,
 				    req);
@@ -798,7 +798,7 @@ int xnbd_handler_on_req(void *prv_session_data,
 		       cmd.command, cmd.data_len, req->sn);
 		xio_disconnect(conn);
 		*/
-		xnbd_reject_request(prv_session_data,
+		nbdx_reject_request(prv_session_data,
 				    prv_portal_data,
 				    &cmd, cmd_data,
 				    req);
@@ -808,20 +808,20 @@ int xnbd_handler_on_req(void *prv_session_data,
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_handler_on_rsp_comp				                     */
+/* nbdx_handler_on_rsp_comp				                     */
 /*---------------------------------------------------------------------------*/
-void xnbd_handler_on_rsp_comp(void *prv_session_data,
+void nbdx_handler_on_rsp_comp(void *prv_session_data,
 			      void *prv_portal_data,
 			      struct xio_msg *rsp)
 {
 	char			*buffer = rsp->out.header.iov_base;
-	struct xnbd_command	cmd;
+	struct nbdx_command	cmd;
 
 	unpack_u32(&cmd.command, buffer);
 
 	switch (cmd.command) {
 	case XNBD_CMD_IO_SUBMIT:
-		xnbd_handle_submit_comp(prv_session_data,
+		nbdx_handle_submit_comp(prv_session_data,
 					prv_portal_data,
 					rsp);
 		break;

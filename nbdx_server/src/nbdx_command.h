@@ -35,44 +35,41 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef XNBD_HANDLERS_H
-#define XNBD_HANDLERS_H
+#ifndef XNBD_COMMAND_H
+#define XNBD_COMMAND_H
 
-struct xnbd_command;
+#include <stdint.h>
 
-/*---------------------------------------------------------------------------*/
-/* xnbd_handler_init_session_data				             */
-/*---------------------------------------------------------------------------*/
-void	*xnbd_handler_init_session_data(int portals_nr);
+/** commands for nbdx server */
+enum nbdx_server_commands {
+	XNBD_CMD_FIRST		= 0,
+	XNBD_CMD_UNKNOWN	= 1,
 
-/*---------------------------------------------------------------------------*/
-/* xnbd_handler_init_portal_data				             */
-/*---------------------------------------------------------------------------*/
-void	*xnbd_handler_init_portal_data(void *prv_session_data,
-				       int portal_nr, void *loop);
+	/* nbdx commands */
+	XNBD_CMD_OPEN		= 10,
+	XNBD_CMD_FSTAT,
+	XNBD_CMD_CLOSE,
+	XNBD_CMD_IO_SETUP,
+	XNBD_CMD_IO_SUBMIT,
+	XNBD_CMD_IO_RELEASE,
+	XNBD_CMD_IO_DESTROY,
 
-/*---------------------------------------------------------------------------*/
-/* xnbd_handler_free_session_data				             */
-/*---------------------------------------------------------------------------*/
-void	xnbd_handler_free_session_data(void *prv_session_data);
+	XNBD_CMD_LAST
+};
 
-/*---------------------------------------------------------------------------*/
-/* xnbd_handler_free_portal_data				             */
-/*---------------------------------------------------------------------------*/
-void	xnbd_handler_free_portal_data(void *prv_portal_data);
+/** command for server */
+struct nbdx_command {
+	uint32_t command;
+	uint32_t data_len;
+};
 
-/*---------------------------------------------------------------------------*/
-/* rai_handler_on_req				                             */
-/*---------------------------------------------------------------------------*/
-int	xnbd_handler_on_req(void *prv_session_data,
-			    void *prv_portal_data,
-			    struct xio_msg *req);
+/** answer to client */
+struct nbdx_answer {
+	uint32_t command;
+	uint32_t data_len;
+	int32_t ret;
+	int32_t ret_errno;
+};
 
-/*---------------------------------------------------------------------------*/
-/* xnbd_handler_on_rsp_comp				                     */
-/*---------------------------------------------------------------------------*/
-void	xnbd_handler_on_rsp_comp(void *prv_session_data,
-				 void *prv_portal_data,
-				 struct xio_msg *rsp);
+#endif /* XNBD_COMMAND_H */
 
-#endif

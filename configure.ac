@@ -1,4 +1,4 @@
-AC_INIT(xnbd, 0.1, libxio@accellio.org)
+AC_INIT(nbdx, 0.1, libxio@accellio.org)
 
 AC_PROG_INSTALL
 

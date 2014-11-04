@@ -50,9 +50,9 @@
 #include <sys/sysmacros.h>
 #include <arpa/inet.h>
 
-#include "xnbd_bs.h"
+#include "nbdx_bs.h"
 #include "libxio.h"
-#include "libxnbd.h"
+#include "libnbdx.h"
 
 /*---------------------------------------------------------------------------*/
 /* preprocessor directives                                                   */
@@ -77,17 +77,17 @@
 /*---------------------------------------------------------------------------*/
 /* structs								     */
 /*---------------------------------------------------------------------------*/
-struct xnbd_bs_aio_info {
-	TAILQ_ENTRY(xnbd_bs_aio_info)	dev_list_entry;
+struct nbdx_bs_aio_info {
+	TAILQ_ENTRY(nbdx_bs_aio_info)	dev_list_entry;
 	io_context_t			ctx;
-	TAILQ_HEAD(, xnbd_io_cmd)	cmd_wait_list;
+	TAILQ_HEAD(, nbdx_io_cmd)	cmd_wait_list;
 	uint32_t			nwaiting;
 	uint32_t			npending;
 	uint32_t			iodepth;
 
 	int				resubmit;
 
-	struct xnbd_bs			*dev;
+	struct nbdx_bs			*dev;
 
 	int				evt_fd;
 	int				pad;
@@ -100,14 +100,14 @@ struct xnbd_bs_aio_info {
 /*---------------------------------------------------------------------------*/
 /* globals								     */
 /*---------------------------------------------------------------------------*/
-static TAILQ_HEAD(, xnbd_bs_aio_info) xnbd_aio_dev_list =
-				TAILQ_HEAD_INITIALIZER(xnbd_aio_dev_list);
+static TAILQ_HEAD(, nbdx_bs_aio_info) nbdx_aio_dev_list =
+				TAILQ_HEAD_INITIALIZER(nbdx_aio_dev_list);
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_aio_iocb_prep							     */
+/* nbdx_aio_iocb_prep							     */
 /*---------------------------------------------------------------------------*/
-static void xnbd_aio_iocb_prep(struct xnbd_bs_aio_info *info, int idx,
-		struct xnbd_io_cmd *cmd)
+static void nbdx_aio_iocb_prep(struct nbdx_bs_aio_info *info, int idx,
+		struct nbdx_io_cmd *cmd)
 {
 	struct iocb *iocb = &info->iocb_arr[idx];
 
@@ -137,12 +137,12 @@ static void xnbd_aio_iocb_prep(struct xnbd_bs_aio_info *info, int idx,
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_aio_submit_dev_batch						     */
+/* nbdx_aio_submit_dev_batch						     */
 /*---------------------------------------------------------------------------*/
-static int xnbd_aio_submit_dev_batch(struct xnbd_bs_aio_info *info)
+static int nbdx_aio_submit_dev_batch(struct nbdx_bs_aio_info *info)
 {
 	int nsubmit, nsuccess;
-	struct xnbd_io_cmd *cmd, *next;
+	struct nbdx_io_cmd *cmd, *next;
 	int i = 0;
 
 	nsubmit = info->iodepth - info->npending; /* max allowed to submit */
@@ -152,9 +152,9 @@ static int xnbd_aio_submit_dev_batch(struct xnbd_bs_aio_info *info)
 	if (!nsubmit)
 		return 0;
 
-	TAILQ_FOREACH_SAFE(cmd, next, &info->cmd_wait_list, xnbd_list) {
-		xnbd_aio_iocb_prep(info, i, cmd);
-		TAILQ_REMOVE(&info->cmd_wait_list, cmd, xnbd_list);
+	TAILQ_FOREACH_SAFE(cmd, next, &info->cmd_wait_list, nbdx_list) {
+		nbdx_aio_iocb_prep(info, i, cmd);
+		TAILQ_REMOVE(&info->cmd_wait_list, cmd, nbdx_list);
 		if (++i == nsubmit)
 			break;
 	}
@@ -173,7 +173,7 @@ static int xnbd_aio_submit_dev_batch(struct xnbd_bs_aio_info *info)
 	if (nsuccess < nsubmit) {
 		for (i = nsubmit-1; i >= nsuccess; i--) {
 			cmd = info->iocb_arr[i].data;
-			TAILQ_INSERT_HEAD(&info->cmd_wait_list, cmd, xnbd_list);
+			TAILQ_INSERT_HEAD(&info->cmd_wait_list, cmd, nbdx_list);
 		}
 	}
 
@@ -183,17 +183,17 @@ static int xnbd_aio_submit_dev_batch(struct xnbd_bs_aio_info *info)
 	/* if no cmds remain, remove the dev from the pending list
 	 */
 	if (!info->nwaiting)
-		TAILQ_REMOVE(&xnbd_aio_dev_list, info, dev_list_entry);
+		TAILQ_REMOVE(&nbdx_aio_dev_list, info, dev_list_entry);
 
 	return 0;
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_aio_complete_one						     */
+/* nbdx_aio_complete_one						     */
 /*---------------------------------------------------------------------------*/
-static void xnbd_aio_complete_one(struct io_event *ep)
+static void nbdx_aio_complete_one(struct io_event *ep)
 {
-	struct xnbd_io_cmd *cmd = ep->data;
+	struct nbdx_io_cmd *cmd = ep->data;
 	const char *op = (cmd->op == XNBD_CMD_PREAD) ? "read" : "write";
 
 	if (ep->res2 != 0)
@@ -224,9 +224,9 @@ static void xnbd_aio_complete_one(struct io_event *ep)
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_aio_get_events							     */
+/* nbdx_aio_get_events							     */
 /*---------------------------------------------------------------------------*/
-static void xnbd_aio_get_events(struct xnbd_bs_aio_info *info)
+static void nbdx_aio_get_events(struct nbdx_bs_aio_info *info)
 {
 	int		i;
 	int		ret;
@@ -247,19 +247,19 @@ retry_getevts:
 			return;
 		}
 		for (i = 0; i < nevents; i++)
-			xnbd_aio_complete_one(&info->io_evts[i]);
+			nbdx_aio_complete_one(&info->io_evts[i]);
 	}
 
 	if (info->nwaiting)
-		xnbd_aio_submit_dev_batch(info);
+		nbdx_aio_submit_dev_batch(info);
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_aio_get_completions						     */
+/* nbdx_aio_get_completions						     */
 /*---------------------------------------------------------------------------*/
-static void xnbd_aio_get_completions(int fd, int events, void *data)
+static void nbdx_aio_get_completions(int fd, int events, void *data)
 {
-	struct xnbd_bs_aio_info	*info = data;
+	struct nbdx_bs_aio_info	*info = data;
 	int			ret;
 	eventfd_t		val;
 
@@ -272,16 +272,16 @@ retry_read:
 		return;
 	}
 	if (info->npending)
-		xnbd_aio_get_events(info);
+		nbdx_aio_get_events(info);
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_aio_init                                                           */
+/* nbdx_bs_aio_init                                                           */
 /*---------------------------------------------------------------------------*/
-static int xnbd_bs_aio_init(struct xnbd_bs *dev)
+static int nbdx_bs_aio_init(struct nbdx_bs *dev)
 {
 	int			i;
-	struct xnbd_bs_aio_info	*dev_info = dev->dd;
+	struct nbdx_bs_aio_info	*dev_info = dev->dd;
 
 	dev_info->dev  = dev;
 
@@ -294,11 +294,11 @@ static int xnbd_bs_aio_init(struct xnbd_bs *dev)
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_aio_open                                                           */
+/* nbdx_bs_aio_open                                                           */
 /*---------------------------------------------------------------------------*/
-static int xnbd_bs_aio_open(struct xnbd_bs *dev, int fd)
+static int nbdx_bs_aio_open(struct nbdx_bs *dev, int fd)
 {
-	struct xnbd_bs_aio_info *info = dev->dd;
+	struct nbdx_bs_aio_info *info = dev->dd;
 	int ret, afd;
 
 	info->iodepth = AIO_MAX_IODEPTH;
@@ -320,7 +320,7 @@ static int xnbd_bs_aio_open(struct xnbd_bs *dev, int fd)
 	ret = xio_context_add_ev_handler(dev->ctx,
 		afd,
 		XIO_POLLIN,
-		xnbd_aio_get_completions, info);
+		nbdx_aio_get_completions, info);
 	if (ret)
 		goto close_eventfd;
 	info->evt_fd = afd;
@@ -350,51 +350,51 @@ close_ctx:
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_aio_close							     */
+/* nbdx_bs_aio_close							     */
 /*---------------------------------------------------------------------------*/
-static inline void xnbd_bs_aio_close(struct xnbd_bs *dev)
+static inline void nbdx_bs_aio_close(struct nbdx_bs *dev)
 {
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_aio_process_events						     */
+/* nbdx_bs_aio_process_events						     */
 /*---------------------------------------------------------------------------*/
-static void xnbd_bs_aio_process_events(struct xnbd_bs *dev)
+static void nbdx_bs_aio_process_events(struct nbdx_bs *dev)
 {
-	struct xnbd_bs_aio_info	*info = dev->dd;
+	struct nbdx_bs_aio_info	*info = dev->dd;
 
 	if (info->npending)
-		xnbd_aio_get_events(info);
+		nbdx_aio_get_events(info);
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_aio_cmd_submit                                                     */
+/* nbdx_bs_aio_cmd_submit                                                     */
 /*---------------------------------------------------------------------------*/
-static int xnbd_bs_aio_cmd_submit(struct xnbd_bs *dev, struct xnbd_io_cmd *cmd)
+static int nbdx_bs_aio_cmd_submit(struct nbdx_bs *dev, struct nbdx_io_cmd *cmd)
 {
-	struct xnbd_bs_aio_info	*info = dev->dd;
+	struct nbdx_bs_aio_info	*info = dev->dd;
 
-	TAILQ_INSERT_TAIL(&info->cmd_wait_list, cmd, xnbd_list);
+	TAILQ_INSERT_TAIL(&info->cmd_wait_list, cmd, nbdx_list);
 	if (!info->nwaiting)
-		TAILQ_INSERT_TAIL(&xnbd_aio_dev_list, info, dev_list_entry);
+		TAILQ_INSERT_TAIL(&nbdx_aio_dev_list, info, dev_list_entry);
 
 	info->nwaiting++;
 
 	if ((info->nwaiting == info->iodepth - info->npending) ||
 	    (cmd->is_last_in_batch)) {
-		xnbd_aio_submit_dev_batch(info);
-		xnbd_bs_aio_process_events(dev);
+		nbdx_aio_submit_dev_batch(info);
+		nbdx_bs_aio_process_events(dev);
 	}
 
 	return 0;
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_aio_exit                                                           */
+/* nbdx_bs_aio_exit                                                           */
 /*---------------------------------------------------------------------------*/
-static void xnbd_bs_aio_exit(struct xnbd_bs *dev)
+static void nbdx_bs_aio_exit(struct nbdx_bs *dev)
 {
-	struct xnbd_bs_aio_info *info = dev->dd;
+	struct nbdx_bs_aio_info *info = dev->dd;
 
 	xio_context_del_ev_handler(dev->ctx, info->evt_fd);
 	close(info->evt_fd);
@@ -402,16 +402,16 @@ static void xnbd_bs_aio_exit(struct xnbd_bs *dev)
 }
 
 /*---------------------------------------------------------------------------*/
-/* struct xnbd_aio_bst                                                        */
+/* struct nbdx_aio_bst                                                        */
 /*---------------------------------------------------------------------------*/
-static struct backingstore_template xnbd_aio_bst = {
+static struct backingstore_template nbdx_aio_bst = {
 	.bs_name		= "aio",
-	.bs_datasize		= sizeof(struct xnbd_bs_aio_info),
-	.bs_init		= xnbd_bs_aio_init,
-	.bs_exit		= xnbd_bs_aio_exit,
-	.bs_open		= xnbd_bs_aio_open,
-	.bs_close		= xnbd_bs_aio_close,
-	.bs_cmd_submit		= xnbd_bs_aio_cmd_submit,
+	.bs_datasize		= sizeof(struct nbdx_bs_aio_info),
+	.bs_init		= nbdx_bs_aio_init,
+	.bs_exit		= nbdx_bs_aio_exit,
+	.bs_open		= nbdx_bs_aio_open,
+	.bs_close		= nbdx_bs_aio_close,
+	.bs_cmd_submit		= nbdx_bs_aio_cmd_submit,
 };
 
 /*
@@ -422,8 +422,8 @@ static struct backingstore_template xnbd_aio_bst = {
 /*---------------------------------------------------------------------------*/
 /* bs_aio_constructor                                                        */
 /*---------------------------------------------------------------------------*/
-void xnbd_bs_aio_constructor(void)
+void nbdx_bs_aio_constructor(void)
 {
-	register_backingstore_template(&xnbd_aio_bst);
+	register_backingstore_template(&nbdx_aio_bst);
 }
 

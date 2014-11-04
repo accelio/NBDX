@@ -1,7 +1,7 @@
 # this is example-file: configure.ac
 
 # initial information about the project
-AC_INIT([xnbd_server],[1.0],[xnbd@accelio.org])
+AC_INIT([nbdx_server],[1.0],[nbdx@accelio.org])
 AC_CONFIG_AUX_DIR([.])
 AM_INIT_AUTOMAKE
 
@@ -113,7 +113,7 @@ echo "const char XNBD_SERVER_GIT_HEAD_STRING@<:@@:>@ = \"$GITHEAD\";" >>version.
 
 AC_MSG_CHECKING([for git head])
 AC_MSG_RESULT([$GITHEAD])
-AC_DEFINE_UNQUOTED([XNBD_SERVER_GITHEAD], ["$GITHEAD"], [Git commit used to build xnbd server])
+AC_DEFINE_UNQUOTED([XNBD_SERVER_GITHEAD], ["$GITHEAD"], [Git commit used to build nbdx server])
 
 # distribute additional compiler and linker flags
 # --> set these variables instead of CFLAGS or LDFLAGS

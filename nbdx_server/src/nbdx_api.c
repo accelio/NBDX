@@ -49,10 +49,10 @@
 
 
 #include "libxio.h"
-#include "xnbd_command.h"
-#include "xnbd_buffer.h"
-#include "xnbd_utils.h"
-#include "libxnbd.h"
+#include "nbdx_command.h"
+#include "nbdx_buffer.h"
+#include "nbdx_utils.h"
+#include "libnbdx.h"
 #include "msg_pool.h"
 
 /*---------------------------------------------------------------------------*/
@@ -78,16 +78,16 @@
 /*---------------------------------------------------------------------------*/
 /* structures								     */
 /*---------------------------------------------------------------------------*/
-struct xnbd_session_data;
-struct xnbd_thread_data;
+struct nbdx_session_data;
+struct nbdx_thread_data;
 
-struct xnbd_mr {
+struct nbdx_mr {
 	struct xio_mr			*omr;
 };
 
-struct xnbd_io_u {
-	struct xnbd_iocb		*iocb;
-	struct xnbd_session_data	*ses_data;
+struct nbdx_io_u {
+	struct nbdx_iocb		*iocb;
+	struct nbdx_session_data	*ses_data;
 	struct xio_msg			req;
 	struct xio_msg			*rsp;
 	int				res;
@@ -95,25 +95,25 @@ struct xnbd_io_u {
 
 	char				req_hdr[MAX_MSG_LEN];
 
-	TAILQ_ENTRY(xnbd_io_u)		io_u_list;
+	TAILQ_ENTRY(nbdx_io_u)		io_u_list;
 };
 
-struct xnbd_context  {
-	struct xnbd_session_data	*session_data;
+struct nbdx_context  {
+	struct nbdx_session_data	*session_data;
 
-	struct xnbd_io_u		*io_us_free;
+	struct nbdx_io_u		*io_us_free;
 	int				io_u_queued_nr;
 	int				io_u_completed_nr;
 	int				io_u_free_nr;
 	int				pad;
 
-	TAILQ_HEAD(, xnbd_io_u)		io_u_free_list;
-	TAILQ_HEAD(, xnbd_io_u)		io_u_completed_list;
-	TAILQ_HEAD(, xnbd_io_u)		io_u_queued_list;
+	TAILQ_HEAD(, nbdx_io_u)		io_u_free_list;
+	TAILQ_HEAD(, nbdx_io_u)		io_u_completed_list;
+	TAILQ_HEAD(, nbdx_io_u)		io_u_queued_list;
 };
 
 /* private session data */
-struct xnbd_session_data {
+struct nbdx_session_data {
 	struct xio_session		*session;
 	int				fd;
 	int				key;
@@ -123,21 +123,21 @@ struct xnbd_session_data {
 	int				max_nr;
 	int				min_nr;
 	int				disconnected;
-	struct xnbd_answer		ans;
+	struct nbdx_answer		ans;
 	struct xio_msg			*cmd_rsp;
 	struct xio_msg			cmd_req;
 	struct xio_connection		*conn;
 
 	struct xio_context		*ctx;
-	xnbd_context_t			io_ctx;
+	nbdx_context_t			io_ctx;
 
-	LIST_ENTRY(xnbd_session_data)   rsd_siblings;
+	LIST_ENTRY(nbdx_session_data)   rsd_siblings;
 };
 
 /*---------------------------------------------------------------------------*/
 /* globals								     */
 /*---------------------------------------------------------------------------*/
-static LIST_HEAD(, xnbd_session_data) rsd_list =
+static LIST_HEAD(, nbdx_session_data) rsd_list =
 	LIST_HEAD_INITIALIZER(rsd_list);
 static pthread_spinlock_t rsd_lock;
 
@@ -145,7 +145,7 @@ static pthread_spinlock_t rsd_lock;
 /*---------------------------------------------------------------------------*/
 /* rsd_module_init							     */
 /*---------------------------------------------------------------------------*/
-__attribute__((constructor)) void xnbd_module_init(void)
+__attribute__((constructor)) void nbdx_module_init(void)
 {
 	pthread_spin_init(&rsd_lock, PTHREAD_PROCESS_PRIVATE);
 }
@@ -153,7 +153,7 @@ __attribute__((constructor)) void xnbd_module_init(void)
 /*---------------------------------------------------------------------------*/
 /* rsd_module_exit							     */
 /*---------------------------------------------------------------------------*/
-__attribute__((destructor)) void xnbd_module_exit(void)
+__attribute__((destructor)) void nbdx_module_exit(void)
 {
 	pthread_spin_destroy(&rsd_lock);
 }
@@ -161,7 +161,7 @@ __attribute__((destructor)) void xnbd_module_exit(void)
 /*---------------------------------------------------------------------------*/
 /* rsd_list_add								     */
 /*---------------------------------------------------------------------------*/
-int rsd_list_add(struct xnbd_session_data *rsd)
+int rsd_list_add(struct nbdx_session_data *rsd)
 {
 	static int key = 10;
 
@@ -177,7 +177,7 @@ int rsd_list_add(struct xnbd_session_data *rsd)
 /*---------------------------------------------------------------------------*/
 /* rsd_list_remove							     */
 /*---------------------------------------------------------------------------*/
-int rsd_list_remove(struct xnbd_session_data *rsd)
+int rsd_list_remove(struct nbdx_session_data *rsd)
 {
 	pthread_spin_lock(&rsd_lock);
 	LIST_REMOVE(rsd, rsd_siblings);
@@ -189,9 +189,9 @@ int rsd_list_remove(struct xnbd_session_data *rsd)
 /*---------------------------------------------------------------------------*/
 /* rsd_list_find							     */
 /*---------------------------------------------------------------------------*/
-struct xnbd_session_data *rsd_list_find(int key)
+struct nbdx_session_data *rsd_list_find(int key)
 {
-	struct xnbd_session_data *rsd;
+	struct nbdx_session_data *rsd;
 
 	pthread_spin_lock(&rsd_lock);
 	LIST_FOREACH(rsd, &rsd_list, rsd_siblings) {
@@ -281,7 +281,7 @@ static int on_session_event(struct xio_session *session,
 		struct xio_session_event_data *event_data,
 		void *cb_user_context)
 {
-	struct xnbd_session_data  *session_data = cb_user_context;
+	struct nbdx_session_data  *session_data = cb_user_context;
 
 	switch (event_data->event) {
 	case XIO_SESSION_CONNECTION_CLOSED_EVENT:
@@ -294,7 +294,7 @@ static int on_session_event(struct xio_session *session,
 		xio_context_stop_loop(session_data->ctx, 0);  /* exit */
 		break;
 	default:
-		printf("libxnbd: unexpected session event: %s. reason: %s\n",
+		printf("libnbdx: unexpected session event: %s. reason: %s\n",
 		       xio_session_event_str(event_data->event),
 		       xio_strerror(event_data->reason));
 		break;
@@ -308,7 +308,7 @@ static int on_session_event(struct xio_session *session,
 /*---------------------------------------------------------------------------*/
 static void on_submit_answer(struct xio_msg *rsp)
 {
-	struct xnbd_io_u	*io_u;
+	struct nbdx_io_u	*io_u;
 
 	io_u = rsp->user_context;
 
@@ -342,7 +342,7 @@ static int on_response(struct xio_session *session,
 			int more_in_batch,
 			void *cb_user_context)
 {
-	struct xnbd_session_data  *session_data = cb_user_context;
+	struct nbdx_session_data  *session_data = cb_user_context;
 	uint32_t		  command;
 
 	unpack_u32(&command,
@@ -362,7 +362,7 @@ static int on_response(struct xio_session *session,
 		xio_context_stop_loop(session_data->ctx, 0);
 		break;
 	default:
-		printf("libxnbd: unknown answer %d\n", command);
+		printf("libnbdx: unknown answer %d\n", command);
 		break;
 	};
 	return 0;
@@ -379,16 +379,16 @@ struct xio_session_ops ses_ops = {
 };
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_open								     */
+/* nbdx_open								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int xnbd_open(const struct sockaddr *addr, socklen_t addrlen,
+__XNBD_PUBLIC int nbdx_open(const struct sockaddr *addr, socklen_t addrlen,
 	      const char *pathname, int flags)
 
 {
 	int				retval;
 	char				url[256];
-	struct xnbd_session_data	*session_data;
-	int				xnbd_err = 0;
+	struct nbdx_session_data	*session_data;
+	int				nbdx_err = 0;
 	int				fd;
 
 	/* client session attributes */
@@ -441,7 +441,7 @@ __XNBD_PUBLIC int xnbd_open(const struct sockaddr *addr, socklen_t addrlen,
 
 	if (session_data->disconnected) {
 		retval = -1;
-		xnbd_err = ECONNREFUSED;
+		nbdx_err = ECONNREFUSED;
 		goto cleanup1;
 	}
 
@@ -454,7 +454,7 @@ __XNBD_PUBLIC int xnbd_open(const struct sockaddr *addr, socklen_t addrlen,
 	xio_release_response(session_data->cmd_rsp);
 
 	if (retval == -1) {
-		xnbd_err = errno;
+		nbdx_err = errno;
 		xio_disconnect(session_data->conn);
 		goto cleanup1;
 	}
@@ -479,22 +479,22 @@ cleanup:
 	/* free the context */
 	xio_context_destroy(session_data->ctx);
 
-	errno = xnbd_err;
+	errno = nbdx_err;
 
-	printf("libxnbd: xnbd_open failed. %m\n");
+	printf("libnbdx: nbdx_open failed. %m\n");
 
 	return -1;
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_close								     */
+/* nbdx_close								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int xnbd_close(int fd)
+__XNBD_PUBLIC int nbdx_close(int fd)
 {
 	int				retval = -1;
-	int				xnbd_err = 0;
+	int				nbdx_err = 0;
 
-	struct xnbd_session_data *session_data = rsd_list_find(fd);
+	struct nbdx_session_data *session_data = rsd_list_find(fd);
 	if (session_data == NULL) {
 		errno = EINVAL;
 		return -1;
@@ -521,8 +521,8 @@ __XNBD_PUBLIC int xnbd_close(int fd)
 			session_data->cmd_rsp->in.header.iov_base,
 			session_data->cmd_rsp->in.header.iov_len);
 	if (retval == -1) {
-		xnbd_err = errno;
-		printf("libxnbd: xnbd_close failed: %m\n");
+		nbdx_err = errno;
+		printf("libnbdx: nbdx_close failed: %m\n");
 	}
 
 	/* acknowlege xio that response is no longer needed */
@@ -543,18 +543,18 @@ cleanup:
 
 	free(session_data);
 
-	errno = xnbd_err;
+	errno = nbdx_err;
 	return retval;
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_fstat								     */
+/* nbdx_fstat								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int xnbd_fstat(int fd, struct stat64 *stbuf)
+__XNBD_PUBLIC int nbdx_fstat(int fd, struct stat64 *stbuf)
 {
 	int				retval;
 
-	struct xnbd_session_data *session_data = rsd_list_find(fd);
+	struct nbdx_session_data *session_data = rsd_list_find(fd);
 	if (session_data == NULL) {
 		errno = EINVAL;
 		return -1;
@@ -596,15 +596,15 @@ __XNBD_PUBLIC int xnbd_fstat(int fd, struct stat64 *stbuf)
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_setup								     */
+/* nbdx_setup								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int xnbd_setup(int fd, int maxevents, xnbd_context_t *ctxp)
+__XNBD_PUBLIC int nbdx_setup(int fd, int maxevents, nbdx_context_t *ctxp)
 {
 	int				i;
-	xnbd_context_t			ctx;
+	nbdx_context_t			ctx;
 	int				retval;
 
-	struct xnbd_session_data *session_data = rsd_list_find(fd);
+	struct nbdx_session_data *session_data = rsd_list_find(fd);
 	if (session_data == NULL) {
 		errno = EINVAL;
 		return -1;
@@ -645,7 +645,7 @@ __XNBD_PUBLIC int xnbd_setup(int fd, int maxevents, xnbd_context_t *ctxp)
 
 	ctx = session_data->io_ctx;
 	ctx->io_us_free = calloc(2*session_data->maxevents,
-				 sizeof(struct xnbd_io_u));
+				 sizeof(struct nbdx_io_u));
 	ctx->io_u_free_nr = 2*session_data->maxevents;
 
 	TAILQ_INIT(&ctx->io_u_free_list);
@@ -669,11 +669,11 @@ __XNBD_PUBLIC int xnbd_setup(int fd, int maxevents, xnbd_context_t *ctxp)
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_destroy								     */
+/* nbdx_destroy								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int xnbd_destroy(xnbd_context_t ctx)
+__XNBD_PUBLIC int nbdx_destroy(nbdx_context_t ctx)
 {
-	struct xnbd_session_data *session_data;
+	struct nbdx_session_data *session_data;
 	int			 retval  = 0;
 
 	session_data = ctx->session_data;
@@ -711,13 +711,13 @@ cleanup:
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_submit								     */
+/* nbdx_submit								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int xnbd_submit(xnbd_context_t ctx,
-			      long nr, struct xnbd_iocb *ios[])
+__XNBD_PUBLIC int nbdx_submit(nbdx_context_t ctx,
+			      long nr, struct nbdx_iocb *ios[])
 {
-	struct xnbd_session_data	*session_data;
-	struct xnbd_io_u		*io_u;
+	struct nbdx_session_data	*session_data;
+	struct nbdx_io_u		*io_u;
 	int				i;
 
 	if (!ctx || (nr < 0))
@@ -741,7 +741,7 @@ __XNBD_PUBLIC int xnbd_submit(xnbd_context_t ctx,
 	for (i = 0; i < nr; i++) {
 		io_u = TAILQ_FIRST(&ctx->io_u_free_list);
 		if (!io_u) {
-			printf("libxnbd: io_u_free_list is empty\n");
+			printf("libnbdx: io_u_free_list is empty\n");
 			return -1;
 		}
 
@@ -750,13 +750,13 @@ __XNBD_PUBLIC int xnbd_submit(xnbd_context_t ctx,
 		msg_reset(&io_u->req);
 
 		/* replace the shadowed fd with the real one */
-		ios[i]->xnbd_fildes = session_data->fd;
+		ios[i]->nbdx_fildes = session_data->fd;
 		pack_submit_command(
 				ios[i],
 				(i == (nr - 1)),
 				io_u->req.out.header.iov_base,
 				&io_u->req.out.header.iov_len);
-		if (ios[i]->xnbd_lio_opcode == XNBD_CMD_PWRITE) {
+		if (ios[i]->nbdx_lio_opcode == XNBD_CMD_PWRITE) {
 			io_u->req.out.data_iov[0].iov_base = ios[i]->u.c.buf;
 			io_u->req.out.data_iov[0].iov_len = ios[i]->u.c.nbytes;
 			if (ios[i]->u.c.mr)
@@ -801,11 +801,11 @@ __XNBD_PUBLIC int xnbd_submit(xnbd_context_t ctx,
 /*---------------------------------------------------------------------------*/
 /* rsd_getevents							     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int xnbd_getevents(xnbd_context_t ctx, long min_nr, long nr,
-		   struct xnbd_event *events, struct timespec *t)
+__XNBD_PUBLIC int nbdx_getevents(nbdx_context_t ctx, long min_nr, long nr,
+		   struct nbdx_event *events, struct timespec *t)
 {
-	struct xnbd_session_data	*session_data;
-	struct xnbd_io_u		*io_u;
+	struct nbdx_session_data	*session_data;
+	struct nbdx_io_u		*io_u;
 	struct timespec			start;
 	int				i, r;
 	int				have_timeout = 0;
@@ -857,7 +857,7 @@ restart:
 		TAILQ_REMOVE(&ctx->io_u_completed_list, io_u, io_u_list);
 		ctx->io_u_completed_nr--;
 
-		io_u->iocb->xnbd_fildes	= session_data->key;
+		io_u->iocb->nbdx_fildes	= session_data->key;
 		io_u->iocb->u.c.buf	= io_u->rsp->in.data_iov[0].iov_base;
 
 		events[i].data		= io_u->iocb->data;
@@ -887,13 +887,13 @@ restart:
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_release								     */
+/* nbdx_release								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int xnbd_release(xnbd_context_t ctx, long nr,
-				struct xnbd_event *events)
+__XNBD_PUBLIC int nbdx_release(nbdx_context_t ctx, long nr,
+				struct nbdx_event *events)
 {
 	int				i;
-	struct xnbd_io_u		*io_u;
+	struct nbdx_io_u		*io_u;
 
 	for (i = 0; i < nr; i++) {
 		io_u = ptr_from_int64(events[i].handle);
@@ -910,19 +910,19 @@ __XNBD_PUBLIC int xnbd_release(xnbd_context_t ctx, long nr,
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_reg_mr								     */
+/* nbdx_reg_mr								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int xnbd_reg_mr(xnbd_context_t ctx, void *buf,
-			      size_t len, xnbd_mr_t *mr)
+__XNBD_PUBLIC int nbdx_reg_mr(nbdx_context_t ctx, void *buf,
+			      size_t len, nbdx_mr_t *mr)
 {
-	*mr = malloc(sizeof(struct xnbd_mr));
+	*mr = malloc(sizeof(struct nbdx_mr));
 	if (*mr == NULL) {
-		printf("libxnbd: malloc failed. %m\n");
+		printf("libnbdx: malloc failed. %m\n");
 		return -1;
 	}
 	(*mr)->omr = xio_reg_mr(buf, len);
 	if ((*mr)->omr == NULL) {
-		printf("libxnbd: failed to register mr. %m\n");
+		printf("libnbdx: failed to register mr. %m\n");
 		free(*mr);
 		return -1;
 	}
@@ -931,14 +931,14 @@ __XNBD_PUBLIC int xnbd_reg_mr(xnbd_context_t ctx, void *buf,
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_dereg_mr							     */
+/* nbdx_dereg_mr							     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int xnbd_dereg_mr(xnbd_context_t ctx, xnbd_mr_t mr)
+__XNBD_PUBLIC int nbdx_dereg_mr(nbdx_context_t ctx, nbdx_mr_t mr)
 {
 	int retval = xio_dereg_mr(&mr->omr);
 
 	if (retval == -1)
-		printf("libxnbd: failed to deregister mr. %m\n");
+		printf("libnbdx: failed to deregister mr. %m\n");
 	free(mr);
 
 	return retval;

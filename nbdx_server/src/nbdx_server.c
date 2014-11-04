@@ -42,7 +42,7 @@
 #include <inttypes.h>
 #include <sys/queue.h>
 #include "libxio.h"
-#include "xnbd_handlers.h"
+#include "nbdx_handlers.h"
 #include <arpa/inet.h>
 
 
@@ -68,8 +68,8 @@ struct portals_vec {
 	const char			*vec[MAX_THREADS];
 };
 
-struct xnbd_thread_data {
-	struct xnbd_server_data		*server_data;
+struct nbdx_thread_data {
+	struct nbdx_server_data		*server_data;
 	char				portal[64];
 	int				affinity;
 	int				pad;
@@ -77,35 +77,35 @@ struct xnbd_thread_data {
 	struct xio_context		*ctx;
 };
 
-struct xnbd_portal_data  {
-	struct	xnbd_thread_data	*tdata;
+struct nbdx_portal_data  {
+	struct	nbdx_thread_data	*tdata;
 	void				*dd_data;
 };
-struct xnbd_server_data;
+struct nbdx_server_data;
 
-struct xnbd_session_data {
+struct nbdx_session_data {
 	struct	xio_session		*session;
 	void				*dd_data;
-	struct xnbd_portal_data		portal_data[MAX_THREADS];
-	SLIST_ENTRY(xnbd_session_data)	srv_ses_list;
+	struct nbdx_portal_data		portal_data[MAX_THREADS];
+	SLIST_ENTRY(nbdx_session_data)	srv_ses_list;
 };
 
 /* server private data */
-struct xnbd_server_data {
+struct nbdx_server_data {
 	struct xio_context		*ctx;
 	int				last_used;
 	int				last_reaped;
 
-	SLIST_HEAD(, xnbd_session_data)	ses_list;
+	SLIST_HEAD(, nbdx_session_data)	ses_list;
 
 	pthread_t			thread_id[MAX_THREADS];
-	struct xnbd_thread_data		tdata[MAX_THREADS];
+	struct nbdx_thread_data		tdata[MAX_THREADS];
 };
 
 /*---------------------------------------------------------------------------*/
 /* portals_get								     */
 /*---------------------------------------------------------------------------*/
-static struct portals_vec *portals_get(struct xnbd_server_data *server_data,
+static struct portals_vec *portals_get(struct nbdx_server_data *server_data,
 				const char *uri, void *user_context)
 {
 	/* fill portals array and return it. */
@@ -145,8 +145,8 @@ static int on_response_comp(struct xio_session *session,
 			struct xio_msg *rsp,
 			void *cb_user_context)
 {
-	struct xnbd_thread_data		*tdata = cb_user_context;
-	struct xnbd_session_data	*ses_data, *tmp_ses_data;
+	struct nbdx_thread_data		*tdata = cb_user_context;
+	struct nbdx_session_data	*ses_data, *tmp_ses_data;
 	int				i = 0;
 
 	SLIST_FOREACH_SAFE(ses_data, &tdata->server_data->ses_list,
@@ -155,7 +155,7 @@ static int on_response_comp(struct xio_session *session,
 			for (i = 0; i < MAX_THREADS; i++) {
 				if (ses_data->portal_data[i].tdata == tdata) {
 					/* process request */
-					xnbd_handler_on_rsp_comp(
+					nbdx_handler_on_rsp_comp(
 					      ses_data->dd_data,
 					      ses_data->portal_data[i].dd_data,
 					      rsp);
@@ -175,8 +175,8 @@ static int on_request(struct xio_session *session,
 			int more_in_batch,
 			void *cb_user_context)
 {
-	struct xnbd_thread_data		*tdata = cb_user_context;
-	struct xnbd_session_data	*ses_data, *tmp_ses_data;
+	struct nbdx_thread_data		*tdata = cb_user_context;
+	struct nbdx_session_data	*ses_data, *tmp_ses_data;
 	int				i, disconnect = 0;
 
 	SLIST_FOREACH_SAFE(ses_data, &tdata->server_data->ses_list,
@@ -185,7 +185,7 @@ static int on_request(struct xio_session *session,
 			for (i = 0; i < MAX_THREADS; i++) {
 				if (ses_data->portal_data[i].tdata == tdata) {
 					/* process request */
-					disconnect = xnbd_handler_on_req(
+					disconnect = nbdx_handler_on_req(
 					      ses_data->dd_data,
 					      ses_data->portal_data[i].dd_data,
 					      req);
@@ -222,7 +222,7 @@ static struct xio_session_ops  portal_server_ops = {
 /*---------------------------------------------------------------------------*/
 static void *portal_server_cb(void *data)
 {
-	struct xnbd_thread_data	*tdata = data;
+	struct nbdx_thread_data	*tdata = data;
 	cpu_set_t		cpuset;
 	pthread_t		thread;
 	struct xio_server	*server;
@@ -269,8 +269,8 @@ static int on_session_event(struct xio_session *session,
 		struct xio_session_event_data *event_data,
 		void *cb_user_context)
 {
-	struct xnbd_session_data *ses_data, *tmp_ses_data;
-	struct xnbd_server_data	 *server_data = cb_user_context;
+	struct nbdx_session_data *ses_data, *tmp_ses_data;
+	struct nbdx_server_data	 *server_data = cb_user_context;
 	int			 i;
 
 
@@ -286,17 +286,17 @@ static int on_session_event(struct xio_session *session,
 			if (ses_data->session == session) {
 				for (i = 0; i < MAX_THREADS; i++) {
 					if (ses_data->portal_data[i].tdata) {
-						xnbd_handler_free_portal_data(
+						nbdx_handler_free_portal_data(
 					   ses_data->portal_data[i].dd_data);
 					   ses_data->portal_data[i].tdata =
 						   NULL;
 					   server_data->last_reaped = i;
 					}
 				}
-				xnbd_handler_free_session_data(
+				nbdx_handler_free_session_data(
 						ses_data->dd_data);
 				SLIST_REMOVE(&server_data->ses_list,
-					     ses_data, xnbd_session_data,
+					     ses_data, nbdx_session_data,
 					     srv_ses_list);
 				free(ses_data);
 				break;
@@ -331,8 +331,8 @@ static int on_new_session(struct xio_session *session,
 			void *cb_user_context)
 {
 	struct portals_vec *portals;
-	struct xnbd_server_data *server_data = cb_user_context;
-	struct xnbd_session_data *ses_data;
+	struct nbdx_server_data *server_data = cb_user_context;
+	struct nbdx_session_data *ses_data;
 	int i;
 
 	portals = portals_get(server_data, req->uri, req->user_context);
@@ -340,11 +340,11 @@ static int on_new_session(struct xio_session *session,
 	/* alloc and  and initialize */
 	ses_data = calloc(1, sizeof(*ses_data));
 	ses_data->session = session;
-	ses_data->dd_data = xnbd_handler_init_session_data(MAX_THREADS);
+	ses_data->dd_data = nbdx_handler_init_session_data(MAX_THREADS);
 	for (i = 0; i < MAX_THREADS; i++) {
 		ses_data->portal_data[i].tdata = &server_data->tdata[i];
 		ses_data->portal_data[i].dd_data =
-			xnbd_handler_init_portal_data(
+			nbdx_handler_init_portal_data(
 				ses_data->dd_data,
 				i,
 				ses_data->portal_data[i].tdata->ctx);
@@ -376,7 +376,7 @@ static struct xio_session_ops  server_ops = {
 int main(int argc, char *argv[])
 {
 	struct xio_server	*server;	/* server portal */
-	struct xnbd_server_data	server_data;
+	struct nbdx_server_data	server_data;
 	char			url[256];
 	int			i;
 	uint16_t		port = atoi(argv[2]);

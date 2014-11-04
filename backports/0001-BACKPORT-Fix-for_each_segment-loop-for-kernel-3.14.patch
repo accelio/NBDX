@@ -5,15 +5,15 @@ Subject: [PATCH] BACKPORT: Fix for_each_segment loop for kernel < 3.14
 
 Signed-off-by: Sagi Grimberg <sagig@mellanox.com>
 ---
- src/xnbd_mq.c |   12 +++++++++++-
+ src/nbdx_mq.c |   12 +++++++++++-
  1 files changed, 11 insertions(+), 1 deletions(-)
 
-diff --git a/src/xnbd_mq.c b/src/xnbd_mq.c
+diff --git a/src/nbdx_mq.c b/src/nbdx_mq.c
 index 9d903e3..7097fea 100644
---- a/src/xnbd_mq.c
-+++ b/src/xnbd_mq.c
+--- a/src/nbdx_mq.c
++++ b/src/nbdx_mq.c
 @@ -41,7 +41,11 @@
- int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
+ int nbdx_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
  		    unsigned long long *len)
  {
 +#if LINUX_VERSION_CODE < KERNEL_VERSION(3,14,0)
@@ -24,7 +24,7 @@ index 9d903e3..7097fea 100644
  	struct req_iterator iter;
  	int i = 0;
  
-@@ -52,9 +56,15 @@ int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
+@@ -52,9 +56,15 @@ int nbdx_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
  
  	*len = 0;
  	rq_for_each_segment(bvec, rq, iter) {

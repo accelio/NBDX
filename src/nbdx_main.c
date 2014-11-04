@@ -36,9 +36,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "xnbd.h"
+#include "nbdx.h"
 
-#define DRV_NAME	"xnbd"
+#define DRV_NAME	"nbdx"
 #define PFX		DRV_NAME ": "
 #define DRV_VERSION	"0.1"
 
@@ -48,10 +48,10 @@ MODULE_LICENSE("Dual BSD/GPL");
 MODULE_VERSION(DRV_VERSION);
 
 int created_portals = 0;
-int xnbd_major;
-int xnbd_indexes; /* num of devices created*/
+int nbdx_major;
+int nbdx_indexes; /* num of devices created*/
 int submit_queues;
-struct list_head g_xnbd_sessions;
+struct list_head g_nbdx_sessions;
 struct mutex g_lock;
 
 static void msg_reset(struct xio_msg *msg)
@@ -64,8 +64,8 @@ static void msg_reset(struct xio_msg *msg)
 	msg->next = NULL;
 }
 
-static inline int xnbd_set_device_state(struct xnbd_file *xdev,
-					enum xnbd_dev_state state)
+static inline int nbdx_set_device_state(struct nbdx_file *xdev,
+					enum nbdx_dev_state state)
 {
 	int ret = 0;
 
@@ -94,12 +94,12 @@ out:
 	return ret;
 }
 
-int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
+int nbdx_transfer(struct nbdx_file *xdev, char *buffer, unsigned long start,
 		  unsigned long len, int write, struct request *req,
-		  struct xnbd_queue *q)
+		  struct nbdx_queue *q)
 {
 	struct raio_io_u *io_u = req->special;
-	struct xnbd_connection *xnbd_conn = q->xnbd_conn;
+	struct nbdx_connection *nbdx_conn = q->nbdx_conn;
 	int cpu, retval = 0;
 
 	pr_debug("%s called and req=%p\n", __func__, req);
@@ -116,7 +116,7 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 
 	if (io_u->iocb.raio_lio_opcode == RAIO_CMD_PWRITE) {
 		io_u->req.in.data_iovlen  = 0;
-		retval = xnbd_rq_map_iov(req, &io_u->req.out,
+		retval = nbdx_rq_map_iov(req, &io_u->req.out,
 					 &io_u->iocb.u.c.nbytes);
 		if (retval) {
 			pr_err("failed to map io vec\n");
@@ -124,7 +124,7 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 		}
 	} else {
 		io_u->req.out.data_iovlen = 0;
-		retval = xnbd_rq_map_iov(req, &io_u->req.in,
+		retval = nbdx_rq_map_iov(req, &io_u->req.in,
 					 &io_u->iocb.u.c.nbytes);
 		if (retval) {
 			pr_err("failed to map io vec\n");
@@ -139,13 +139,13 @@ int xnbd_transfer(struct xnbd_file *xdev, char *buffer, unsigned long start,
 	io_u->breq = req;
 
 	cpu = get_cpu();
-	if (cpu != xnbd_conn->cpu_id) {
+	if (cpu != nbdx_conn->cpu_id) {
 		pr_debug("conn %d preempted to cpuid %d, switching conn\n",
-			 cpu, xnbd_conn->cpu_id);
-		xnbd_conn = xnbd_conn->xnbd_sess->xnbd_conns[cpu];
+			 cpu, nbdx_conn->cpu_id);
+		nbdx_conn = nbdx_conn->nbdx_sess->nbdx_conns[cpu];
 	}
-	pr_debug("sending req on conn %d\n", xnbd_conn->cpu_id);
-	retval = xio_send_request(xnbd_conn->conn, &io_u->req);
+	pr_debug("sending req on conn %d\n", nbdx_conn->cpu_id);
+	retval = xio_send_request(nbdx_conn->conn, &io_u->req);
 	put_cpu();
 	if (retval) {
 		pr_err("failed xio_send_request ret=%d\n", retval);
@@ -156,29 +156,29 @@ err:
 	return retval;
 }
 
-struct xnbd_file *xnbd_file_find(struct xnbd_session *xnbd_session,
+struct nbdx_file *nbdx_file_find(struct nbdx_session *nbdx_session,
 				 const char *xdev_name)
 {
-	struct xnbd_file *pos;
-	struct xnbd_file *ret = NULL;
+	struct nbdx_file *pos;
+	struct nbdx_file *ret = NULL;
 
-	spin_lock(&xnbd_session->devs_lock);
-	list_for_each_entry(pos, &xnbd_session->devs_list, list) {
+	spin_lock(&nbdx_session->devs_lock);
+	list_for_each_entry(pos, &nbdx_session->devs_list, list) {
 		if (!strcmp(pos->file_name, xdev_name)) {
 			ret = pos;
 			break;
 		}
 	}
-	spin_unlock(&xnbd_session->devs_lock);
+	spin_unlock(&nbdx_session->devs_lock);
 
 	return ret;
 }
 
-struct xnbd_session *xnbd_session_find(struct list_head *s_data_list,
+struct nbdx_session *nbdx_session_find(struct list_head *s_data_list,
                                        const char *host_name)
 {
-	struct xnbd_session *pos;
-	struct xnbd_session *ret = NULL;
+	struct nbdx_session *pos;
+	struct nbdx_session *ret = NULL;
 
 	list_for_each_entry(pos, s_data_list, list) {
 		if (!strcmp(pos->kobj.name, host_name)) {
@@ -190,11 +190,11 @@ struct xnbd_session *xnbd_session_find(struct list_head *s_data_list,
 	return ret;
 }
 
-struct xnbd_session *xnbd_session_find_by_portal(struct list_head *s_data_list,
+struct nbdx_session *nbdx_session_find_by_portal(struct list_head *s_data_list,
 						 const char *portal)
 {
-	struct xnbd_session *pos;
-	struct xnbd_session *ret = NULL;
+	struct nbdx_session *pos;
+	struct nbdx_session *ret = NULL;
 
 	mutex_lock(&g_lock);
 	list_for_each_entry(pos, s_data_list, list) {
@@ -211,7 +211,7 @@ struct xnbd_session *xnbd_session_find_by_portal(struct list_head *s_data_list,
 /*---------------------------------------------------------------------------*/
 /* on_submit_answer							     */
 /*---------------------------------------------------------------------------*/
-static void on_submit_answer(struct xnbd_connection *xnbd_conn,
+static void on_submit_answer(struct nbdx_connection *nbdx_conn,
 			     struct xio_msg *rsp)
 {
 	struct raio_io_u *io_u;
@@ -236,11 +236,11 @@ static void on_submit_answer(struct xnbd_connection *xnbd_conn,
 
 	ret = -io_u->ans.ret;
 	if (ret) {
-		struct xnbd_file *xdev = io_u->breq->rq_disk->private_data;
+		struct nbdx_file *xdev = io_u->breq->rq_disk->private_data;
 
 		pr_err("error response on xdev %s ret=%d\n", xdev->dev_name,
 							     ret);
-		xnbd_set_device_state(xdev, DEVICE_OFFLINE);
+		nbdx_set_device_state(xdev, DEVICE_OFFLINE);
 	}
 
 	if (breq)
@@ -259,7 +259,7 @@ static int on_response(struct xio_session *session,
 		       int more_in_batch,
 		       void *cb_user_context)
 {
-	struct xnbd_connection *xnbd_conn = cb_user_context;
+	struct nbdx_connection *nbdx_conn = cb_user_context;
 	uint32_t command;
 
 	unpack_u32(&command, rsp->in.header.iov_base);
@@ -268,7 +268,7 @@ static int on_response(struct xio_session *session,
 
 	switch (command) {
 	case RAIO_CMD_IO_SUBMIT:
-		on_submit_answer(xnbd_conn, rsp);
+		on_submit_answer(nbdx_conn, rsp);
 		break;
 	case RAIO_CMD_OPEN:
 	case RAIO_CMD_FSTAT:
@@ -276,9 +276,9 @@ static int on_response(struct xio_session *session,
 	case RAIO_CMD_IO_SETUP:
 	case RAIO_CMD_IO_DESTROY:
 		/* break the loop */
-		xnbd_conn->rsp = rsp;
-		xnbd_conn->wq_flag = 1;
-		wake_up_interruptible(&xnbd_conn->wq);
+		nbdx_conn->rsp = rsp;
+		nbdx_conn->wq_flag = 1;
+		wake_up_interruptible(&nbdx_conn->wq);
 		break;
 	default:
 		printk("on_response: unknown answer %d\n", command);
@@ -296,8 +296,8 @@ static int on_session_event(struct xio_session *session,
 		struct xio_session_event_data *event_data,
 		void *cb_user_context)
 {
-	struct xnbd_session *xnbd_session = cb_user_context;
-	struct xnbd_connection *xnbd_conn;
+	struct nbdx_session *nbdx_session = cb_user_context;
+	struct nbdx_connection *nbdx_conn;
 	struct xio_connection	*conn = event_data->conn;
 	int i;
 
@@ -307,17 +307,17 @@ static int on_session_event(struct xio_session *session,
 	switch (event_data->event) {
 	case XIO_SESSION_CONNECTION_ESTABLISHED_EVENT:
 		pr_debug("%s: connection=%p established\n", __func__, conn);
-		if (atomic_dec_and_test(&xnbd_session->conns_count)) {
+		if (atomic_dec_and_test(&nbdx_session->conns_count)) {
 			pr_debug("%s: last connection established\n", __func__);
-			complete(&xnbd_session->conns_wait);
+			complete(&nbdx_session->conns_wait);
 		}
 		break;
 	case XIO_SESSION_TEARDOWN_EVENT:
-		xnbd_session->session = NULL;
+		nbdx_session->session = NULL;
 		xio_session_destroy(session);
 		for (i = 0; i < submit_queues; i++) {
-			xnbd_conn = xnbd_session->xnbd_conns[i];
-			xio_context_stop_loop(xnbd_conn->ctx); /* exit */
+			nbdx_conn = nbdx_session->nbdx_conns[i];
+			xio_context_stop_loop(nbdx_conn->ctx); /* exit */
 		}
 		break;
 	case XIO_SESSION_CONNECTION_TEARDOWN_EVENT:
@@ -337,14 +337,14 @@ static int on_session_event(struct xio_session *session,
 /*---------------------------------------------------------------------------*/
 /* callbacks								     */
 /*---------------------------------------------------------------------------*/
-struct xio_session_ops xnbd_ses_ops = {
+struct xio_session_ops nbdx_ses_ops = {
 	.on_session_event		=  on_session_event,
 	.on_session_established		=  NULL,
 	.on_msg				=  on_response,
 	.on_msg_error			=  NULL
 };
 
-const char *xnbd_device_state_str(struct xnbd_file *dev)
+const char *nbdx_device_state_str(struct nbdx_file *dev)
 {
 	char *state;
 
@@ -370,24 +370,24 @@ const char *xnbd_device_state_str(struct xnbd_file *dev)
 	return state;
 }
 
-static int xnbd_setup_remote_session(struct xnbd_session *xnbd_session,
+static int nbdx_setup_remote_session(struct nbdx_session *nbdx_session,
 			    int maxevents)
 {
 
 	int retval, cpu;
-	struct xnbd_connection *xnbd_conn;
+	struct nbdx_connection *nbdx_conn;
 
 	cpu = get_cpu();
-	xnbd_conn = xnbd_session->xnbd_conns[cpu];
+	nbdx_conn = nbdx_session->nbdx_conns[cpu];
 
-	msg_reset(&xnbd_conn->req);
+	msg_reset(&nbdx_conn->req);
 	pack_setup_command(maxevents,
-			   xnbd_conn->req.out.header.iov_base,
-			   &xnbd_conn->req.out.header.iov_len);
+			   nbdx_conn->req.out.header.iov_base,
+			   &nbdx_conn->req.out.header.iov_len);
 
-	xnbd_conn->req.out.data_iovlen = 0;
+	nbdx_conn->req.out.data_iovlen = 0;
 
-	retval = xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
+	retval = xio_send_request(nbdx_conn->conn, &nbdx_conn->req);
 	put_cpu();
 	if (retval) {
 		pr_err("failed xio_send_request ret=%d\n", retval);
@@ -395,40 +395,40 @@ static int xnbd_setup_remote_session(struct xnbd_session *xnbd_session,
 	}
 
 	pr_debug("%s: before waiting for event\n", __func__);
-	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
+	wait_event_interruptible(nbdx_conn->wq, nbdx_conn->wq_flag != 0);
 	pr_debug("%s: after waiting for event\n", __func__);
-	xnbd_conn->wq_flag = 0;
+	nbdx_conn->wq_flag = 0;
 
-	retval = unpack_setup_answer(xnbd_conn->rsp->in.header.iov_base,
-				     xnbd_conn->rsp->in.header.iov_len);
+	retval = unpack_setup_answer(nbdx_conn->rsp->in.header.iov_base,
+				     nbdx_conn->rsp->in.header.iov_len);
 	if (retval == -EINVAL)
 		pr_err("failed to unpack setup response");
 
 	pr_debug("after unpacking setup_answer\n");
 
 	/* acknowlege xio that response is no longer needed */
-	xio_release_response(xnbd_conn->rsp);
+	xio_release_response(nbdx_conn->rsp);
 
 	return retval;
 
 }
 
-static int xnbd_destroy_remote_session(struct xnbd_session *xnbd_session)
+static int nbdx_destroy_remote_session(struct nbdx_session *nbdx_session)
 {
 
 	int retval, cpu;
-	struct xnbd_connection *xnbd_conn;
+	struct nbdx_connection *nbdx_conn;
 
 	cpu = get_cpu();
-	xnbd_conn = xnbd_session->xnbd_conns[cpu];
+	nbdx_conn = nbdx_session->nbdx_conns[cpu];
 
-	msg_reset(&xnbd_conn->req);
-	pack_destroy_command(xnbd_conn->req.out.header.iov_base,
-			&xnbd_conn->req.out.header.iov_len);
+	msg_reset(&nbdx_conn->req);
+	pack_destroy_command(nbdx_conn->req.out.header.iov_base,
+			&nbdx_conn->req.out.header.iov_len);
 
-	xnbd_conn->req.out.data_iovlen = 0;
+	nbdx_conn->req.out.data_iovlen = 0;
 
-	retval = xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
+	retval = xio_send_request(nbdx_conn->conn, &nbdx_conn->req);
 	put_cpu();
 	if (retval) {
 		pr_err("failed xio_send_request ret=%d\n", retval);
@@ -436,37 +436,37 @@ static int xnbd_destroy_remote_session(struct xnbd_session *xnbd_session)
 	}
 
 	pr_debug("%s: before waiting for event\n", __func__);
-	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
+	wait_event_interruptible(nbdx_conn->wq, nbdx_conn->wq_flag != 0);
 	pr_debug("%s: after waiting for event\n", __func__);
-	xnbd_conn->wq_flag = 0;
+	nbdx_conn->wq_flag = 0;
 
-	retval = unpack_destroy_answer(xnbd_conn->rsp->in.header.iov_base,
-			xnbd_conn->rsp->in.header.iov_len);
+	retval = unpack_destroy_answer(nbdx_conn->rsp->in.header.iov_base,
+			nbdx_conn->rsp->in.header.iov_len);
 	if (retval == -EINVAL)
 		pr_err("failed to unpack destroy response");
 
 	/* acknowlege xio that response is no longer needed */
-	xio_release_response(xnbd_conn->rsp);
+	xio_release_response(nbdx_conn->rsp);
 
 	return retval;
 
 }
 
-static int xnbd_stat_remote_device(struct xnbd_session *xnbd_session,
-				   struct xnbd_file *xnbd_file)
+static int nbdx_stat_remote_device(struct nbdx_session *nbdx_session,
+				   struct nbdx_file *nbdx_file)
 {
-	struct xnbd_connection *xnbd_conn;
+	struct nbdx_connection *nbdx_conn;
 	int retval, cpu;
 
 	cpu = get_cpu();
-	xnbd_conn = xnbd_session->xnbd_conns[cpu];
+	nbdx_conn = nbdx_session->nbdx_conns[cpu];
 
-	msg_reset(&xnbd_conn->req);
-	pack_fstat_command(xnbd_file->fd,
-			   xnbd_conn->req.out.header.iov_base,
-			   &xnbd_conn->req.out.header.iov_len);
+	msg_reset(&nbdx_conn->req);
+	pack_fstat_command(nbdx_file->fd,
+			   nbdx_conn->req.out.header.iov_base,
+			   &nbdx_conn->req.out.header.iov_len);
 
-	retval = xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
+	retval = xio_send_request(nbdx_conn->conn, &nbdx_conn->req);
 	put_cpu();
 	if (retval) {
 		pr_err("failed xio_send_request ret=%d\n", retval);
@@ -474,39 +474,39 @@ static int xnbd_stat_remote_device(struct xnbd_session *xnbd_session,
 	}
 
 	pr_debug("%s: before wait_event_interruptible\n", __func__);
-	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
+	wait_event_interruptible(nbdx_conn->wq, nbdx_conn->wq_flag != 0);
 	pr_debug("%s: after wait_event_interruptible\n", __func__);
-	xnbd_conn->wq_flag = 0;
+	nbdx_conn->wq_flag = 0;
 
-	retval = unpack_fstat_answer(xnbd_conn->rsp->in.header.iov_base,
-				     xnbd_conn->rsp->in.header.iov_len,
-				     &xnbd_file->stbuf);
+	retval = unpack_fstat_answer(nbdx_conn->rsp->in.header.iov_base,
+				     nbdx_conn->rsp->in.header.iov_len,
+				     &nbdx_file->stbuf);
 	if (retval == -EINVAL)
 		pr_err("failed to unpack fstat response\n");
 
 	pr_debug("after unpacking fstat response file_size=%llx bytes\n",
-		 xnbd_file->stbuf.st_size);
+		 nbdx_file->stbuf.st_size);
 
 	/* acknowlege xio that response is no longer needed */
-	xio_release_response(xnbd_conn->rsp);
+	xio_release_response(nbdx_conn->rsp);
 
 	return retval;
 }
 
-static int xnbd_open_remote_device(struct xnbd_session *xnbd_session,
-				   struct xnbd_file *xnbd_file)
+static int nbdx_open_remote_device(struct nbdx_session *nbdx_session,
+				   struct nbdx_file *nbdx_file)
 {
-	struct xnbd_connection *xnbd_conn;
+	struct nbdx_connection *nbdx_conn;
 	int retval, cpu;
 
 	cpu = get_cpu();
-	xnbd_conn = xnbd_session->xnbd_conns[cpu];
-	msg_reset(&xnbd_conn->req);
-	pack_open_command(xnbd_file->file_name, O_RDWR,
-			  xnbd_conn->req.out.header.iov_base,
-			  &xnbd_conn->req.out.header.iov_len);
+	nbdx_conn = nbdx_session->nbdx_conns[cpu];
+	msg_reset(&nbdx_conn->req);
+	pack_open_command(nbdx_file->file_name, O_RDWR,
+			  nbdx_conn->req.out.header.iov_base,
+			  &nbdx_conn->req.out.header.iov_len);
 
-	retval = xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
+	retval = xio_send_request(nbdx_conn->conn, &nbdx_conn->req);
 	put_cpu();
 	if (retval) {
 		pr_err("failed xio_send_request ret=%d\n", retval);
@@ -514,35 +514,35 @@ static int xnbd_open_remote_device(struct xnbd_session *xnbd_session,
 	}
 
 	pr_debug("open file: before wait_event_interruptible\n");
-	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
+	wait_event_interruptible(nbdx_conn->wq, nbdx_conn->wq_flag != 0);
 	pr_debug("open file: after wait_event_interruptible\n");
-	xnbd_conn->wq_flag = 0;
+	nbdx_conn->wq_flag = 0;
 
-	retval = unpack_open_answer(xnbd_conn->rsp->in.header.iov_base,
-				    xnbd_conn->rsp->in.header.iov_len,
-				    &xnbd_file->fd);
+	retval = unpack_open_answer(nbdx_conn->rsp->in.header.iov_base,
+				    nbdx_conn->rsp->in.header.iov_len,
+				    &nbdx_file->fd);
 	if (retval == -EINVAL)
 		pr_err("failed to unpack open response\n");
 
-	xio_release_response(xnbd_conn->rsp);
+	xio_release_response(nbdx_conn->rsp);
 
 	return retval;
 }
 
-static int xnbd_close_remote_device(struct xnbd_session *xnbd_session,
+static int nbdx_close_remote_device(struct nbdx_session *nbdx_session,
 				   int fd)
 {
-	struct xnbd_connection *xnbd_conn;
+	struct nbdx_connection *nbdx_conn;
 	int retval, cpu;
 
 	cpu = get_cpu();
-	xnbd_conn = xnbd_session->xnbd_conns[cpu];
-	msg_reset(&xnbd_conn->req);
+	nbdx_conn = nbdx_session->nbdx_conns[cpu];
+	msg_reset(&nbdx_conn->req);
 	pack_close_command(fd,
-			xnbd_conn->req.out.header.iov_base,
-			&xnbd_conn->req.out.header.iov_len);
+			nbdx_conn->req.out.header.iov_base,
+			&nbdx_conn->req.out.header.iov_len);
 
-	retval = xio_send_request(xnbd_conn->conn, &xnbd_conn->req);
+	retval = xio_send_request(nbdx_conn->conn, &nbdx_conn->req);
 	put_cpu();
 	if (retval) {
 		pr_err("failed xio_send_request ret=%d\n", retval);
@@ -550,311 +550,311 @@ static int xnbd_close_remote_device(struct xnbd_session *xnbd_session,
 	}
 
 	pr_debug("%s: before wait_event_interruptible\n", __func__);
-	wait_event_interruptible(xnbd_conn->wq, xnbd_conn->wq_flag != 0);
+	wait_event_interruptible(nbdx_conn->wq, nbdx_conn->wq_flag != 0);
 	pr_debug("%s: after wait_event_interruptible\n", __func__);
-	xnbd_conn->wq_flag = 0;
+	nbdx_conn->wq_flag = 0;
 
-	retval = unpack_close_answer(xnbd_conn->rsp->in.header.iov_base,
-				    xnbd_conn->rsp->in.header.iov_len);
+	retval = unpack_close_answer(nbdx_conn->rsp->in.header.iov_base,
+				    nbdx_conn->rsp->in.header.iov_len);
 	if (retval == -EINVAL)
 		pr_err("failed to unpack close response\n");
 
-	xio_release_response(xnbd_conn->rsp);
+	xio_release_response(nbdx_conn->rsp);
 
 	return retval;
 }
 
-int xnbd_create_device(struct xnbd_session *xnbd_session,
+int nbdx_create_device(struct nbdx_session *nbdx_session,
 					   const char *xdev_name, struct kobject *p_kobj)
 {
-	struct xnbd_file *xnbd_file;
+	struct nbdx_file *nbdx_file;
 	int retval;
 
-	xnbd_file = kzalloc(sizeof(*xnbd_file), GFP_KERNEL);
-	if (!xnbd_file) {
-		printk("xnbd_file alloc failed\n");
+	nbdx_file = kzalloc(sizeof(*nbdx_file), GFP_KERNEL);
+	if (!nbdx_file) {
+		printk("nbdx_file alloc failed\n");
 		return -ENOMEM;
 	}
 
-	sscanf(xdev_name, "%s", xnbd_file->file_name);
-	xnbd_file->index = xnbd_indexes++;
-	sprintf(xnbd_file->dev_name, "xnbd%d", xnbd_file->index);
-	xnbd_file->nr_queues = submit_queues;
-	xnbd_file->queue_depth = XNBD_QUEUE_DEPTH;
-	xnbd_file->xnbd_conns = xnbd_session->xnbd_conns;
+	sscanf(xdev_name, "%s", nbdx_file->file_name);
+	nbdx_file->index = nbdx_indexes++;
+	sprintf(nbdx_file->dev_name, "nbdx%d", nbdx_file->index);
+	nbdx_file->nr_queues = submit_queues;
+	nbdx_file->queue_depth = XNBD_QUEUE_DEPTH;
+	nbdx_file->nbdx_conns = nbdx_session->nbdx_conns;
 
-	spin_lock_init(&xnbd_file->state_lock);
-	retval = xnbd_set_device_state(xnbd_file, DEVICE_OPENNING);
+	spin_lock_init(&nbdx_file->state_lock);
+	retval = nbdx_set_device_state(nbdx_file, DEVICE_OPENNING);
 	if (retval) {
 		pr_err("device %s: Illegal state transition %s -> openning\n",
-		       xnbd_file->dev_name,
-		       xnbd_device_state_str(xnbd_file));
-		kfree(xnbd_file);
+		       nbdx_file->dev_name,
+		       nbdx_device_state_str(nbdx_file));
+		kfree(nbdx_file);
 		goto err;
 	}
 
-	retval = xnbd_create_device_files(p_kobj, xnbd_file->dev_name, &xnbd_file->kobj);
+	retval = nbdx_create_device_files(p_kobj, nbdx_file->dev_name, &nbdx_file->kobj);
 	if (retval) {
 		pr_err("failed to create sysfs for device %s\n",
-		       xnbd_file->dev_name);
+		       nbdx_file->dev_name);
 		goto err;
 	}
 
-	retval = xnbd_setup_queues(xnbd_file);
+	retval = nbdx_setup_queues(nbdx_file);
 	if (retval) {
-		pr_err("%s: xnbd_setup_queues failed\n", __func__);
+		pr_err("%s: nbdx_setup_queues failed\n", __func__);
 		goto err_put;
 	}
 
-	retval = xnbd_open_remote_device(xnbd_session, xnbd_file);
+	retval = nbdx_open_remote_device(nbdx_session, nbdx_file);
 	if (retval) {
 		pr_err("failed to open remote device ret=%d\n", retval);
 		goto err_queues;
 	}
 
-	retval = xnbd_stat_remote_device(xnbd_session, xnbd_file);
+	retval = nbdx_stat_remote_device(nbdx_session, nbdx_file);
 	if (retval) {
 		pr_err("failed to stat remote device %s ret=%d\n",
-		       xnbd_file->file_name, retval);
+		       nbdx_file->file_name, retval);
 		goto err_queues;
 	}
 
-	retval = xnbd_register_block_device(xnbd_file);
+	retval = nbdx_register_block_device(nbdx_file);
 	if (retval) {
-		pr_err("failed to register xnbd device %s ret=%d\n",
-		       xnbd_file->file_name, retval);
+		pr_err("failed to register nbdx device %s ret=%d\n",
+		       nbdx_file->file_name, retval);
 		goto err_queues;
 	}
 
-	xnbd_set_device_state(xnbd_file, DEVICE_RUNNING);
+	nbdx_set_device_state(nbdx_file, DEVICE_RUNNING);
 
-	spin_lock(&xnbd_session->devs_lock);
-	list_add(&xnbd_file->list, &xnbd_session->devs_list);
-	spin_unlock(&xnbd_session->devs_lock);
+	spin_lock(&nbdx_session->devs_lock);
+	list_add(&nbdx_file->list, &nbdx_session->devs_list);
+	spin_unlock(&nbdx_session->devs_lock);
 
 	return 0;
 
 err_queues:
-	xnbd_destroy_queues(xnbd_file);
+	nbdx_destroy_queues(nbdx_file);
 err_put:
-	xnbd_destroy_kobj(&xnbd_file->kobj);
+	nbdx_destroy_kobj(&nbdx_file->kobj);
 err:
 	return retval;
 }
 
-void xnbd_destroy_device(struct xnbd_session *xnbd_session,
-                         struct xnbd_file *xnbd_file)
+void nbdx_destroy_device(struct nbdx_session *nbdx_session,
+                         struct nbdx_file *nbdx_file)
 {
 	pr_debug("%s\n", __func__);
 
-	xnbd_set_device_state(xnbd_file, DEVICE_OFFLINE);
-	xnbd_unregister_block_device(xnbd_file);
-	xnbd_close_remote_device(xnbd_session, xnbd_file->fd);
-	xnbd_destroy_queues(xnbd_file);
+	nbdx_set_device_state(nbdx_file, DEVICE_OFFLINE);
+	nbdx_unregister_block_device(nbdx_file);
+	nbdx_close_remote_device(nbdx_session, nbdx_file->fd);
+	nbdx_destroy_queues(nbdx_file);
 
-	spin_lock(&xnbd_session->devs_lock);
-	list_del(&xnbd_file->list);
-	spin_unlock(&xnbd_session->devs_lock);
+	spin_lock(&nbdx_session->devs_lock);
+	list_del(&nbdx_file->list);
+	spin_unlock(&nbdx_session->devs_lock);
 }
 
-static void xnbd_destroy_session_devices(struct xnbd_session *xnbd_session)
+static void nbdx_destroy_session_devices(struct nbdx_session *nbdx_session)
 {
-	struct xnbd_file *xdev, *tmp;
+	struct nbdx_file *xdev, *tmp;
 
-	list_for_each_entry_safe(xdev, tmp, &xnbd_session->devs_list, list) {
-		xnbd_destroy_device(xnbd_session, xdev);
-		xnbd_destroy_kobj(&xdev->kobj);
+	list_for_each_entry_safe(xdev, tmp, &nbdx_session->devs_list, list) {
+		nbdx_destroy_device(nbdx_session, xdev);
+		nbdx_destroy_kobj(&xdev->kobj);
 	}
 }
 
-static int xnbd_connect_work(void *data)
+static int nbdx_connect_work(void *data)
 {
-	struct xnbd_connection *xnbd_conn = data;
+	struct nbdx_connection *nbdx_conn = data;
 
 	pr_info("%s: start connect work on cpu %d\n", __func__,
-		xnbd_conn->cpu_id);
+		nbdx_conn->cpu_id);
 
-	memset(&xnbd_conn->req, 0, sizeof(xnbd_conn->req));
-	xnbd_conn->req.out.header.iov_base = kmalloc(MAX_MSG_LEN, GFP_KERNEL);
-	xnbd_conn->req.out.header.iov_len = MAX_MSG_LEN;
-	xnbd_conn->req.out.data_iovlen = 0;
+	memset(&nbdx_conn->req, 0, sizeof(nbdx_conn->req));
+	nbdx_conn->req.out.header.iov_base = kmalloc(MAX_MSG_LEN, GFP_KERNEL);
+	nbdx_conn->req.out.header.iov_len = MAX_MSG_LEN;
+	nbdx_conn->req.out.data_iovlen = 0;
 
-	init_waitqueue_head(&xnbd_conn->wq);
-	xnbd_conn->wq_flag = 0;
+	init_waitqueue_head(&nbdx_conn->wq);
+	nbdx_conn->wq_flag = 0;
 
-	xnbd_conn->ctx = xio_context_create(XIO_LOOP_GIVEN_THREAD, NULL, current, 0, xnbd_conn->cpu_id);
-	if (!xnbd_conn->ctx) {
+	nbdx_conn->ctx = xio_context_create(XIO_LOOP_GIVEN_THREAD, NULL, current, 0, nbdx_conn->cpu_id);
+	if (!nbdx_conn->ctx) {
 		printk("context open failed\n");
 		return 1;
 	}
 	pr_info("cpu %d: context established ctx=%p\n",
-		xnbd_conn->cpu_id, xnbd_conn->ctx);
+		nbdx_conn->cpu_id, nbdx_conn->ctx);
 
-	xnbd_conn->conn = xio_connect(xnbd_conn->xnbd_sess->session,
-				      xnbd_conn->ctx, 0, NULL, xnbd_conn);
-	if (!xnbd_conn->conn){
+	nbdx_conn->conn = xio_connect(nbdx_conn->nbdx_sess->session,
+				      nbdx_conn->ctx, 0, NULL, nbdx_conn);
+	if (!nbdx_conn->conn){
 		printk("connection open failed\n");
-		xio_context_destroy(xnbd_conn->ctx);
+		xio_context_destroy(nbdx_conn->ctx);
 		return 1;
 	}
 	pr_info("cpu %d: connection established conn=%p\n",
-		xnbd_conn->cpu_id, xnbd_conn->conn);
+		nbdx_conn->cpu_id, nbdx_conn->conn);
 
 	/* the default xio supplied main loop */
-	xio_context_run_loop(xnbd_conn->ctx);
+	xio_context_run_loop(nbdx_conn->ctx);
 
 	/* complete when last loop was stopped */
-	if (atomic_dec_and_test(&xnbd_conn->xnbd_sess->destroy_conns_count))
-		complete(&xnbd_conn->xnbd_sess->destroy_conns_wait);
+	if (atomic_dec_and_test(&nbdx_conn->nbdx_sess->destroy_conns_count))
+		complete(&nbdx_conn->nbdx_sess->destroy_conns_wait);
 
 	do_exit(0);
 	return 0;
 }
 
 /**
- * destroy xnbd_conn before waking up ktread task
+ * destroy nbdx_conn before waking up ktread task
  */
-static void xnbd_destroy_conn(struct xnbd_connection *xnbd_conn)
+static void nbdx_destroy_conn(struct nbdx_connection *nbdx_conn)
 {
-	struct task_struct *task = xnbd_conn->conn_th;
+	struct task_struct *task = nbdx_conn->conn_th;
 
-	xnbd_conn->xnbd_sess = NULL;
-	xnbd_conn->conn_th = NULL;
-	xnbd_conn->conn = NULL;
-	xnbd_conn->ctx = NULL;
+	nbdx_conn->nbdx_sess = NULL;
+	nbdx_conn->conn_th = NULL;
+	nbdx_conn->conn = NULL;
+	nbdx_conn->ctx = NULL;
 	/* release buffer for management messages */
-	kfree(xnbd_conn->req.out.header.iov_base);
-	kfree(xnbd_conn);
+	kfree(nbdx_conn->req.out.header.iov_base);
+	kfree(nbdx_conn);
 }
 
-static void xnbd_destroy_session_connections(struct xnbd_session *xnbd_session)
+static void nbdx_destroy_session_connections(struct nbdx_session *nbdx_session)
 {
-	struct xnbd_connection *xnbd_conn;
+	struct nbdx_connection *nbdx_conn;
 	int i;
 
-	init_completion(&xnbd_session->destroy_conns_wait);
-	atomic_set(&xnbd_session->destroy_conns_count, submit_queues);
+	init_completion(&nbdx_session->destroy_conns_wait);
+	atomic_set(&nbdx_session->destroy_conns_count, submit_queues);
 
 	for (i = 0; i < submit_queues; i++) {
-		xnbd_conn = xnbd_session->xnbd_conns[i];
-		xio_disconnect(xnbd_conn->conn);
+		nbdx_conn = nbdx_session->nbdx_conns[i];
+		xio_disconnect(nbdx_conn->conn);
 	}
 
 	/* wait for all connections to be destroyed */
-	wait_for_completion(&xnbd_session->destroy_conns_wait);
+	wait_for_completion(&nbdx_session->destroy_conns_wait);
 
 	for (i = 0; i < submit_queues; i++) {
-		xnbd_conn = xnbd_session->xnbd_conns[i];
+		nbdx_conn = nbdx_session->nbdx_conns[i];
 		/* TODO
 		 * need to destroy xio context after stopping event
 		 * loop in the specific kthread.
 		 * due to xio disconnect issue, the context isn't destroyed
 		 * at the bounded kthread
 		 * */
-		xio_context_destroy(xnbd_conn->ctx);
-		xnbd_destroy_conn(xnbd_conn);
+		xio_context_destroy(nbdx_conn->ctx);
+		nbdx_destroy_conn(nbdx_conn);
 	}
 
-	kfree(xnbd_session->xnbd_conns);
+	kfree(nbdx_session->nbdx_conns);
 }
 
-static int xnbd_create_conn(struct xnbd_session *xnbd_session, int cpu,
-			    struct xnbd_connection **conn)
+static int nbdx_create_conn(struct nbdx_session *nbdx_session, int cpu,
+			    struct nbdx_connection **conn)
 {
-	struct xnbd_connection *xnbd_conn;
+	struct nbdx_connection *nbdx_conn;
 	char name[50];
 
-	xnbd_conn = kzalloc(sizeof(*xnbd_conn), GFP_KERNEL);
-	if (!xnbd_conn) {
-		pr_err("failed to allocate xnbd_conn");
+	nbdx_conn = kzalloc(sizeof(*nbdx_conn), GFP_KERNEL);
+	if (!nbdx_conn) {
+		pr_err("failed to allocate nbdx_conn");
 		return -ENOMEM;
 	}
 
 	sprintf(name, "session thread %d", cpu);
-	xnbd_conn->xnbd_sess = xnbd_session;
-	xnbd_conn->cpu_id = cpu;
+	nbdx_conn->nbdx_sess = nbdx_session;
+	nbdx_conn->cpu_id = cpu;
 
 	pr_debug("opening thread on cpu %d\n", cpu);
-	xnbd_conn->conn_th = kthread_create(xnbd_connect_work, xnbd_conn, name);
-	kthread_bind(xnbd_conn->conn_th, cpu);
-	atomic_inc(&xnbd_session->conns_count);
-	wake_up_process(xnbd_conn->conn_th);
-	*conn = xnbd_conn;
+	nbdx_conn->conn_th = kthread_create(nbdx_connect_work, nbdx_conn, name);
+	kthread_bind(nbdx_conn->conn_th, cpu);
+	atomic_inc(&nbdx_session->conns_count);
+	wake_up_process(nbdx_conn->conn_th);
+	*conn = nbdx_conn;
 
 	return 0;
 }
 
-int xnbd_session_create(const char *portal)
+int nbdx_session_create(const char *portal)
 {
-	struct xnbd_session *xnbd_session;
+	struct nbdx_session *nbdx_session;
 	int i, j, ret;
 
 	/* client session attributes */
 	struct xio_session_attr attr = {
-		&xnbd_ses_ops, /* callbacks structure */
+		&nbdx_ses_ops, /* callbacks structure */
 		NULL,	  /* no need to pass the server private data */
 		0
 	};
 
-	xnbd_session = kzalloc(sizeof(*xnbd_session), GFP_KERNEL);
-	if (!xnbd_session) {
-		pr_err("failed to allocate xnbd session\n");
+	nbdx_session = kzalloc(sizeof(*nbdx_session), GFP_KERNEL);
+	if (!nbdx_session) {
+		pr_err("failed to allocate nbdx session\n");
 		return -ENOMEM;
 	}
 
-	ret = xnbd_create_portal_files(&xnbd_session->kobj);
+	ret = nbdx_create_portal_files(&nbdx_session->kobj);
 	if (ret) {
 		ret = -ENOMEM;
 		goto err_sysfs;
 	}
 
-	strcpy(xnbd_session->portal, portal);
-	xnbd_session->session = xio_session_create(XIO_SESSION_CLIENT,
-		     &attr, xnbd_session->portal, 0, 0, xnbd_session);
-	if (!xnbd_session->session) {
+	strcpy(nbdx_session->portal, portal);
+	nbdx_session->session = xio_session_create(XIO_SESSION_CLIENT,
+		     &attr, nbdx_session->portal, 0, 0, nbdx_session);
+	if (!nbdx_session->session) {
 		pr_err("failed to create xio session\n");
 		ret = -ENOMEM;
 		goto err_free_session;
 	}
 
-	INIT_LIST_HEAD(&xnbd_session->devs_list);
-	spin_lock_init(&xnbd_session->devs_lock);
+	INIT_LIST_HEAD(&nbdx_session->devs_list);
+	spin_lock_init(&nbdx_session->devs_lock);
 
 	mutex_lock(&g_lock);
-	list_add(&xnbd_session->list, &g_xnbd_sessions);
+	list_add(&nbdx_session->list, &g_nbdx_sessions);
 	created_portals++;
 	mutex_unlock(&g_lock);
 
-	xnbd_session->xnbd_conns = kzalloc(submit_queues * sizeof(*xnbd_session->xnbd_conns),
+	nbdx_session->nbdx_conns = kzalloc(submit_queues * sizeof(*nbdx_session->nbdx_conns),
 					  GFP_KERNEL);
-	if (!xnbd_session->xnbd_conns) {
-		pr_err("failed to allocate xnbd connections array\n");
+	if (!nbdx_session->nbdx_conns) {
+		pr_err("failed to allocate nbdx connections array\n");
 		ret = -ENOMEM;
 		goto err_destroy_portal;
 	}
 
-	init_completion(&xnbd_session->conns_wait);
-	atomic_set(&xnbd_session->conns_count, 0);
+	init_completion(&nbdx_session->conns_wait);
+	atomic_set(&nbdx_session->conns_count, 0);
 
 	for (i = 0; i < submit_queues; i++) {
-		ret = xnbd_create_conn(xnbd_session, i,
-				       &xnbd_session->xnbd_conns[i]);
+		ret = nbdx_create_conn(nbdx_session, i,
+				       &nbdx_session->nbdx_conns[i]);
 		if (ret)
 			goto err_destroy_conns;
 	}
 
 	/* wait for all connections establishment to complete */
-	if (!wait_for_completion_interruptible_timeout(&xnbd_session->conns_wait,
+	if (!wait_for_completion_interruptible_timeout(&nbdx_session->conns_wait,
 						       120 * HZ)) {
 		pr_err("connection establishment timeout expired\n");
 		goto err_destroy_conns;
 	}
 
-	ret = xnbd_setup_remote_session(xnbd_session,
+	ret = nbdx_setup_remote_session(nbdx_session,
 			submit_queues * XNBD_QUEUE_DEPTH);
 	if (ret) {
 		pr_err("failed to setup remote session %s ret=%d\n",
-				xnbd_session->portal, ret);
+				nbdx_session->portal, ret);
 		goto err_destroy_conns;
 	}
 
@@ -862,66 +862,66 @@ int xnbd_session_create(const char *portal)
 
 err_destroy_conns:
 	for (j = 0; j < i; j++) {
-		xnbd_destroy_conn(xnbd_session->xnbd_conns[j]);
-		xnbd_session->xnbd_conns[j] = NULL;
+		nbdx_destroy_conn(nbdx_session->nbdx_conns[j]);
+		nbdx_session->nbdx_conns[j] = NULL;
 	}
-	kfree(xnbd_session->xnbd_conns);
+	kfree(nbdx_session->nbdx_conns);
 err_destroy_portal:
 	mutex_lock(&g_lock);
-	list_del(&xnbd_session->list);
+	list_del(&nbdx_session->list);
 	mutex_unlock(&g_lock);
-	xio_session_destroy(xnbd_session->session);
+	xio_session_destroy(nbdx_session->session);
 err_free_session:
-	xnbd_destroy_kobj(&xnbd_session->kobj);
+	nbdx_destroy_kobj(&nbdx_session->kobj);
 err_sysfs:
 	return ret;
 
 }
 
-void xnbd_session_destroy(struct xnbd_session *xnbd_session)
+void nbdx_session_destroy(struct nbdx_session *nbdx_session)
 {
 	mutex_lock(&g_lock);
-	list_del(&xnbd_session->list);
+	list_del(&nbdx_session->list);
 	mutex_unlock(&g_lock);
 
-	xnbd_destroy_session_devices(xnbd_session);
-	xnbd_destroy_remote_session(xnbd_session);
-	xnbd_destroy_session_connections(xnbd_session);
+	nbdx_destroy_session_devices(nbdx_session);
+	nbdx_destroy_remote_session(nbdx_session);
+	nbdx_destroy_session_connections(nbdx_session);
 }
 
-static int __init xnbd_init_module(void)
+static int __init nbdx_init_module(void)
 {
-	if (xnbd_create_sysfs_files())
+	if (nbdx_create_sysfs_files())
 		return 1;
 
 	pr_debug("nr_cpu_ids=%d, num_online_cpus=%d\n",
 		 nr_cpu_ids, num_online_cpus());
 	submit_queues = num_online_cpus();
 
-	xnbd_major = register_blkdev(0, "xnbd");
-	if (xnbd_major < 0)
-		return xnbd_major;
+	nbdx_major = register_blkdev(0, "nbdx");
+	if (nbdx_major < 0)
+		return nbdx_major;
 
 	mutex_init(&g_lock);
-	INIT_LIST_HEAD(&g_xnbd_sessions);
+	INIT_LIST_HEAD(&g_nbdx_sessions);
 
 	return 0;
 }
 
-static void __exit xnbd_cleanup_module(void)
+static void __exit nbdx_cleanup_module(void)
 {
-	struct xnbd_session *xnbd_session, *tmp;
+	struct nbdx_session *nbdx_session, *tmp;
 
-	unregister_blkdev(xnbd_major, "xnbd");
+	unregister_blkdev(nbdx_major, "nbdx");
 
-	list_for_each_entry_safe(xnbd_session, tmp, &g_xnbd_sessions, list) {
-		xnbd_session_destroy(xnbd_session);
-		xnbd_destroy_kobj(&xnbd_session->kobj);
+	list_for_each_entry_safe(nbdx_session, tmp, &g_nbdx_sessions, list) {
+		nbdx_session_destroy(nbdx_session);
+		nbdx_destroy_kobj(&nbdx_session->kobj);
 	}
 
-	xnbd_destroy_sysfs_files();
+	nbdx_destroy_sysfs_files();
 
 }
 
-module_init(xnbd_init_module);
-module_exit(xnbd_cleanup_module);
+module_init(nbdx_init_module);
+module_exit(nbdx_cleanup_module);

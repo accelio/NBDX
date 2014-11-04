@@ -36,9 +36,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include "xnbd.h"
+#include "nbdx.h"
 
-int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
+int nbdx_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
 		    unsigned long long *len)
 {
 	struct bio_vec bvec;
@@ -63,7 +63,7 @@ int xnbd_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
 	return 0;
 }
 
-static struct blk_mq_hw_ctx *xnbd_alloc_hctx(struct blk_mq_reg *reg,
+static struct blk_mq_hw_ctx *nbdx_alloc_hctx(struct blk_mq_reg *reg,
 					     unsigned int hctx_index)
 {
 
@@ -106,16 +106,16 @@ static struct blk_mq_hw_ctx *xnbd_alloc_hctx(struct blk_mq_reg *reg,
 	return hctx;
 }
 
-static void xnbd_free_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_index)
+static void nbdx_free_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_index)
 {
 	pr_err("%s called\n", __func__);
 
 	kfree(hctx);
 }
 
-static int xnbd_request(struct request *req, struct xnbd_queue *xq)
+static int nbdx_request(struct request *req, struct nbdx_queue *xq)
 {
-	struct xnbd_file *xdev;
+	struct nbdx_file *xdev;
 	unsigned long start = blk_rq_pos(req) << XNBD_SECT_SHIFT;
 	unsigned long len  = blk_rq_cur_bytes(req);
 	int write = rq_data_dir(req) == WRITE;
@@ -130,7 +130,7 @@ static int xnbd_request(struct request *req, struct xnbd_queue *xq)
 		return 0;
 	}
 
-	err = xnbd_transfer(xdev, req->buffer, start, len, write, req, xq);
+	err = nbdx_transfer(xdev, req->buffer, start, len, write, req, xq);
 	if (unlikely(err))
 		pr_err("transfer failed for req %p\n", req);
 
@@ -138,15 +138,15 @@ static int xnbd_request(struct request *req, struct xnbd_queue *xq)
 
 }
 
-static int xnbd_queue_rq(struct blk_mq_hw_ctx *hctx, struct request *rq)
+static int nbdx_queue_rq(struct blk_mq_hw_ctx *hctx, struct request *rq)
 {
-	struct xnbd_queue *xnbd_q;
+	struct nbdx_queue *nbdx_q;
 	int err;
 
 	pr_debug("%s called\n", __func__);
 
-	xnbd_q = hctx->driver_data;
-	err = xnbd_request(rq, xnbd_q);
+	nbdx_q = hctx->driver_data;
+	err = nbdx_request(rq, nbdx_q);
 
 	if (err) {
 		rq->errors = -EIO;
@@ -156,17 +156,17 @@ static int xnbd_queue_rq(struct blk_mq_hw_ctx *hctx, struct request *rq)
 	}
 }
 
-static int xnbd_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
+static int nbdx_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 			  unsigned int index)
 {
-	struct xnbd_file *xdev = data;
-	struct xnbd_queue *xq;
+	struct nbdx_file *xdev = data;
+	struct nbdx_queue *xq;
 
 	pr_debug("%s called index=%u\n", __func__, index);
 
 	xq = &xdev->queues[index];
 	pr_debug("%s called xq=%p\n", __func__, xq);
-	xq->xnbd_conn = xdev->xnbd_conns[index];
+	xq->nbdx_conn = xdev->nbdx_conns[index];
 	xq->xdev = xdev;
 	xq->queue_depth = xdev->queue_depth;
 	hctx->driver_data = xq;
@@ -174,22 +174,22 @@ static int xnbd_init_hctx(struct blk_mq_hw_ctx *hctx, void *data,
 	return 0;
 }
 
-static struct blk_mq_ops xnbd_mq_ops = {
-	.queue_rq       = xnbd_queue_rq,
+static struct blk_mq_ops nbdx_mq_ops = {
+	.queue_rq       = nbdx_queue_rq,
 	.map_queue      = blk_mq_map_queue,
-	.init_hctx	= xnbd_init_hctx,
-	.alloc_hctx	= xnbd_alloc_hctx,
-	.free_hctx	= xnbd_free_hctx,
+	.init_hctx	= nbdx_init_hctx,
+	.alloc_hctx	= nbdx_alloc_hctx,
+	.free_hctx	= nbdx_free_hctx,
 };
 
-static struct blk_mq_reg xnbd_mq_reg = {
-	.ops		= &xnbd_mq_ops,
+static struct blk_mq_reg nbdx_mq_reg = {
+	.ops		= &nbdx_mq_ops,
 	.cmd_size	= sizeof(struct raio_io_u),
 	.flags		= BLK_MQ_F_SHOULD_MERGE,
 	.numa_node	= NUMA_NO_NODE,
 };
 
-int xnbd_setup_queues(struct xnbd_file *xdev)
+int nbdx_setup_queues(struct nbdx_file *xdev)
 {
 	pr_debug("%s called\n", __func__);
 
@@ -201,30 +201,30 @@ int xnbd_setup_queues(struct xnbd_file *xdev)
 	return 0;
 }
 
-static int xnbd_open(struct block_device *bd, fmode_t mode)
+static int nbdx_open(struct block_device *bd, fmode_t mode)
 {
 	pr_debug("%s called\n", __func__);
 	return 0;
 }
 
-static void xnbd_release(struct gendisk *gd, fmode_t mode)
+static void nbdx_release(struct gendisk *gd, fmode_t mode)
 {
 	pr_debug("%s called\n", __func__);
 }
 
-static int xnbd_media_changed(struct gendisk *gd)
-{
-	pr_debug("%s called\n", __func__);
-	return 0;
-}
-
-static int xnbd_revalidate(struct gendisk *gd)
+static int nbdx_media_changed(struct gendisk *gd)
 {
 	pr_debug("%s called\n", __func__);
 	return 0;
 }
 
-static int xnbd_ioctl(struct block_device *bd, fmode_t mode,
+static int nbdx_revalidate(struct gendisk *gd)
+{
+	pr_debug("%s called\n", __func__);
+	return 0;
+}
+
+static int nbdx_ioctl(struct block_device *bd, fmode_t mode,
 		      unsigned cmd, unsigned long arg)
 {
 	pr_debug("%s called\n", __func__);
@@ -232,68 +232,68 @@ static int xnbd_ioctl(struct block_device *bd, fmode_t mode,
 }
 
 
-static struct block_device_operations xnbd_ops = {
+static struct block_device_operations nbdx_ops = {
 	.owner           = THIS_MODULE,
-	.open 	         = xnbd_open,
-	.release 	 = xnbd_release,
-	.media_changed   = xnbd_media_changed,
-	.revalidate_disk = xnbd_revalidate,
-	.ioctl	         = xnbd_ioctl
+	.open 	         = nbdx_open,
+	.release 	 = nbdx_release,
+	.media_changed   = nbdx_media_changed,
+	.revalidate_disk = nbdx_revalidate,
+	.ioctl	         = nbdx_ioctl
 };
 
-void xnbd_destroy_queues(struct xnbd_file *xdev)
+void nbdx_destroy_queues(struct nbdx_file *xdev)
 {
 	pr_debug("%s called\n", __func__);
 
 	kfree(xdev->queues);
 }
 
-int xnbd_register_block_device(struct xnbd_file *xnbd_file)
+int nbdx_register_block_device(struct nbdx_file *nbdx_file)
 {
-	sector_t size = xnbd_file->stbuf.st_size;
+	sector_t size = nbdx_file->stbuf.st_size;
 
 	pr_debug("%s called\n", __func__);
 
-	xnbd_mq_reg.queue_depth = XNBD_QUEUE_DEPTH;
-	xnbd_mq_reg.nr_hw_queues = submit_queues;
-	xnbd_file->major = xnbd_major;
+	nbdx_mq_reg.queue_depth = XNBD_QUEUE_DEPTH;
+	nbdx_mq_reg.nr_hw_queues = submit_queues;
+	nbdx_file->major = nbdx_major;
 
-	xnbd_file->queue = blk_mq_init_queue(&xnbd_mq_reg, xnbd_file);
-	if (IS_ERR(xnbd_file->queue)) {
+	nbdx_file->queue = blk_mq_init_queue(&nbdx_mq_reg, nbdx_file);
+	if (IS_ERR(nbdx_file->queue)) {
 		pr_err("%s: Failed to allocate blk queue ret=%ld\n",
-		       __func__, PTR_ERR(xnbd_file->queue));
-		return PTR_ERR(xnbd_file->queue);
+		       __func__, PTR_ERR(nbdx_file->queue));
+		return PTR_ERR(nbdx_file->queue);
 	}
 
-	xnbd_file->queue->queuedata = xnbd_file;
-	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, xnbd_file->queue);
-	queue_flag_clear_unlocked(QUEUE_FLAG_ADD_RANDOM, xnbd_file->queue);
+	nbdx_file->queue->queuedata = nbdx_file;
+	queue_flag_set_unlocked(QUEUE_FLAG_NONROT, nbdx_file->queue);
+	queue_flag_clear_unlocked(QUEUE_FLAG_ADD_RANDOM, nbdx_file->queue);
 
-	xnbd_file->disk = alloc_disk_node(1, NUMA_NO_NODE);
-	if (!xnbd_file->disk) {
-		blk_cleanup_queue(xnbd_file->queue);
+	nbdx_file->disk = alloc_disk_node(1, NUMA_NO_NODE);
+	if (!nbdx_file->disk) {
+		blk_cleanup_queue(nbdx_file->queue);
 		pr_err("%s: Failed to allocate disk node\n", __func__);
 		return -ENOMEM;
 	}
 
-	xnbd_file->disk->major = xnbd_file->major;
-	xnbd_file->disk->first_minor = xnbd_file->index;
-	xnbd_file->disk->fops = &xnbd_ops;
-	xnbd_file->disk->queue = xnbd_file->queue;
-	xnbd_file->disk->private_data = xnbd_file;
-	blk_queue_logical_block_size(xnbd_file->queue, XNBD_SECT_SIZE);
-	blk_queue_physical_block_size(xnbd_file->queue, XNBD_SECT_SIZE);
+	nbdx_file->disk->major = nbdx_file->major;
+	nbdx_file->disk->first_minor = nbdx_file->index;
+	nbdx_file->disk->fops = &nbdx_ops;
+	nbdx_file->disk->queue = nbdx_file->queue;
+	nbdx_file->disk->private_data = nbdx_file;
+	blk_queue_logical_block_size(nbdx_file->queue, XNBD_SECT_SIZE);
+	blk_queue_physical_block_size(nbdx_file->queue, XNBD_SECT_SIZE);
 	sector_div(size, XNBD_SECT_SIZE);
-	set_capacity(xnbd_file->disk, size);
-	sscanf(xnbd_file->dev_name, "%s", xnbd_file->disk->disk_name);
-	add_disk(xnbd_file->disk);
+	set_capacity(nbdx_file->disk, size);
+	sscanf(nbdx_file->dev_name, "%s", nbdx_file->disk->disk_name);
+	add_disk(nbdx_file->disk);
 
 	return 0;
 }
 
-void xnbd_unregister_block_device(struct xnbd_file *xnbd_file)
+void nbdx_unregister_block_device(struct nbdx_file *nbdx_file)
 {
-	del_gendisk(xnbd_file->disk);
-	blk_cleanup_queue(xnbd_file->queue);
-	put_disk(xnbd_file->disk);
+	del_gendisk(nbdx_file->disk);
+	blk_cleanup_queue(nbdx_file->queue);
+	put_disk(nbdx_file->disk);
 }

@@ -35,41 +35,56 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef XNBD_COMMAND_H
-#define XNBD_COMMAND_H
+#ifndef XNBD_UTILS_H
+#define XNBD_UTILS_H
 
-#include <stdint.h>
+#include <libnbdx.h>
 
-/** commands for xnbd server */
-enum xnbd_server_commands {
-	XNBD_CMD_FIRST		= 0,
-	XNBD_CMD_UNKNOWN	= 1,
+#define SUBMIT_BLOCK_SIZE				\
+	+ sizeof(uint32_t) /* nbdx_filedes */		\
+	+ sizeof(uint32_t) /* nbdx_lio_opcode */	\
+	+ sizeof(uint64_t) /* nbytes */			\
+	+ sizeof(uint64_t) /* offset */
 
-	/* xnbd commands */
-	XNBD_CMD_OPEN		= 10,
-	XNBD_CMD_FSTAT,
-	XNBD_CMD_CLOSE,
-	XNBD_CMD_IO_SETUP,
-	XNBD_CMD_IO_SUBMIT,
-	XNBD_CMD_IO_RELEASE,
-	XNBD_CMD_IO_DESTROY,
+#define STAT_BLOCK_SIZE					\
+	+ sizeof(uint64_t) /* dev */			\
+	+ sizeof(uint64_t) /* ino */			\
+	+ sizeof(uint32_t) /* mode */			\
+	+ sizeof(uint32_t) /* nlink */                  \
+	+ sizeof(uint64_t) /* uid */			\
+	+ sizeof(uint64_t) /* gid */			\
+	+ sizeof(uint64_t) /* rdev */			\
+	+ sizeof(uint64_t) /* size */                   \
+	+ sizeof(uint32_t) /* blksize */                \
+	+ sizeof(uint32_t) /* blocks */                 \
+	+ sizeof(uint64_t) /* atime */                  \
+	+ sizeof(uint64_t) /* mtime */                  \
+	+ sizeof(uint64_t) /* ctime */
 
-	XNBD_CMD_LAST
-};
 
-/** command for server */
-struct xnbd_command {
-	uint32_t command;
-	uint32_t data_len;
-};
 
-/** answer to client */
-struct xnbd_answer {
-	uint32_t command;
-	uint32_t data_len;
-	int32_t ret;
-	int32_t ret_errno;
-};
 
-#endif /* XNBD_COMMAND_H */
+char *pack_stat64(struct stat64 *stbuf, char *buffer);
+const char *unpack_stat64(struct stat64 *result, const char *buffer);
+char *pack_iocb(struct nbdx_iocb *iocb, char *buffer);
+const char *unpack_iocb(struct nbdx_iocb *iocb, const char *buffer);
+
+void pack_open_command(const char *pathname, int flags,
+		       void *buf, size_t *len);
+void pack_close_command(int fd, void *buf, size_t *len);
+void pack_fstat_command(int fd, void *buf, size_t *len);
+void pack_setup_command(int maxevents, void *buf, size_t *len);
+void pack_destroy_command(void *buf, size_t *len);
+void pack_submit_command(struct nbdx_iocb *iocb, int is_last_in_batch,
+			 void *buf, size_t *len);
+
+
+
+int unpack_open_answer(char *buf, size_t len, int *fd);
+int unpack_close_answer(char *buf, size_t len);
+int unpack_fstat_answer(char *buf, size_t len, struct stat64 *stbuf);
+int unpack_setup_answer(char *buf, size_t len);
+int unpack_destroy_answer(char *buf, size_t len);
+
+#endif  /* XNBD_UTILS_H */
 

@@ -35,65 +35,138 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#include <errno.h>
-#include <inttypes.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include "libnbdx.h"
+#include "nbdx_bs.h"
 
-#include "libxnbd.h"
-#include "xnbd_bs.h"
+/*---------------------------------------------------------------------------*/
+/* globals								     */
+/*---------------------------------------------------------------------------*/
+static SLIST_HEAD(, backingstore_template) bst_list =
+	SLIST_HEAD_INITIALIZER(bst_list);
 
 
 /*---------------------------------------------------------------------------*/
-/* preprocessor directives                                                   */
+/* register_backingstore_template					     */
 /*---------------------------------------------------------------------------*/
-#define NULL_BS_DEV_SIZE        (1ULL << 32)
-
-/*---------------------------------------------------------------------------*/
-/* xnbd_bs_null_cmd_submit						     */
-/*---------------------------------------------------------------------------*/
-int xnbd_bs_null_cmd_submit(struct xnbd_bs *dev,
-		       struct xnbd_io_cmd *cmd)
+int register_backingstore_template(struct backingstore_template *bst)
 {
-	cmd->res = cmd->bcount;
-	cmd->res2 = 0;
-	if (cmd->comp_cb)
-		cmd->comp_cb(cmd);
+	SLIST_INSERT_HEAD(&bst_list, bst, backingstore_siblings);
+
 	return 0;
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_null_open							     */
+/* get_backingstore_template						     */
 /*---------------------------------------------------------------------------*/
-static int xnbd_bs_null_open(struct xnbd_bs *dev, int fd)
+struct backingstore_template *get_backingstore_template(const char *name)
 {
-	dev->stbuf.st_size = NULL_BS_DEV_SIZE;
+	struct backingstore_template *bst;
+
+	SLIST_FOREACH(bst, &bst_list, backingstore_siblings) {
+		if (!strcmp(name, bst->bs_name))
+			return bst;
+	}
+	return NULL;
+}
+
+extern void nbdx_bs_aio_constructor(void);
+extern void nbdx_bs_null_constructor(void);
+
+/*---------------------------------------------------------------------------*/
+/* register_backingstores						     */
+/*---------------------------------------------------------------------------*/
+static void register_backingstores(void)
+{
+	if (SLIST_EMPTY(&bst_list)) {
+		nbdx_bs_aio_constructor();
+		nbdx_bs_null_constructor();
+	}
+}
+
+/*---------------------------------------------------------------------------*/
+/* nbdx_bs_init								     */
+/*---------------------------------------------------------------------------*/
+struct nbdx_bs *nbdx_bs_init(void *ctx, const char *name)
+{
+	struct nbdx_bs			*dev = NULL;
+	struct backingstore_template	*bst;
+
+	register_backingstores();
+
+	bst = get_backingstore_template(name);
+	if (bst == NULL) {
+		fprintf(stderr, "backingstore does not exist name:%s\n", name);
+		goto cleanup;
+	}
+
+	dev = calloc(1, sizeof(*dev)+bst->bs_datasize);
+	if (dev == NULL) {
+		fprintf(stderr, "calloc failed\n");
+		goto cleanup;
+	}
+
+	dev->dd		= ((char *)dev) + sizeof(*dev);
+	dev->bst	= bst;
+	dev->ctx	= ctx;
+
+	if (dev->bst->bs_init) {
+		int retval = dev->bst->bs_init(dev);
+		if (retval != 0)
+			goto cleanup;
+	}
+	return dev;
+
+cleanup:
+	free(dev);
+	return NULL;
+}
+
+/*---------------------------------------------------------------------------*/
+/* nbdx_bs_exit								     */
+/*---------------------------------------------------------------------------*/
+void nbdx_bs_exit(struct nbdx_bs *dev)
+{
+	if (dev->bst->bs_exit)
+		dev->bst->bs_exit(dev);
+	free(dev);
+}
+
+/*---------------------------------------------------------------------------*/
+/* nbdx_bs_open								     */
+/*---------------------------------------------------------------------------*/
+int nbdx_bs_open(struct nbdx_bs *dev, int fd)
+{
+	if (dev->bst->bs_open) {
+		int retval = dev->bst->bs_open(dev, fd);
+		if (retval == 0)
+			dev->fd = fd;
+		return retval;
+	}
 	return 0;
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_null_close							     */
+/* nbdx_bs_close							     */
 /*---------------------------------------------------------------------------*/
-static inline void xnbd_bs_null_close(struct xnbd_bs *dev)
+void nbdx_bs_close(struct nbdx_bs *dev)
 {
+	if (dev->bst->bs_close)
+		dev->bst->bs_close(dev);
 }
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_null_bst							     */
+/* nbdx_bs_cmd_submit							     */
 /*---------------------------------------------------------------------------*/
-static struct backingstore_template xnbd_null_bst = {
-	.bs_name		= "null",
-	.bs_datasize		= 0,
-	.bs_open		= xnbd_bs_null_open,
-	.bs_close		= xnbd_bs_null_close,
-	.bs_cmd_submit		= xnbd_bs_null_cmd_submit,
-};
-
-/*---------------------------------------------------------------------------*/
-/* xnbd_bs_null_constructor						     */
-/*---------------------------------------------------------------------------*/
-void xnbd_bs_null_constructor(void)
+int nbdx_bs_cmd_submit(struct nbdx_bs *dev, struct nbdx_io_cmd *cmd)
 {
-	register_backingstore_template(&xnbd_null_bst);
+	if (dev->bst->bs_cmd_submit)
+		return dev->bst->bs_cmd_submit(dev, cmd);
+
+	return 0;
 }
+
 

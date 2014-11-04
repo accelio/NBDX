@@ -5,19 +5,19 @@
 #include <sys/stat.h>
 #include <stdint.h>
 
-struct xnbd_io_cmd;
-struct xnbd_bs;
+struct nbdx_io_cmd;
+struct nbdx_bs;
 
 /*---------------------------------------------------------------------------*/
 /* typedefs								     */
 /*---------------------------------------------------------------------------*/
-typedef int (*xnbd_completion_cb_t)(struct xnbd_io_cmd *cmd);
+typedef int (*nbdx_completion_cb_t)(struct nbdx_io_cmd *cmd);
 
 
 /*---------------------------------------------------------------------------*/
 /* forward declarations	                                                     */
 /*---------------------------------------------------------------------------*/
-struct xnbd_io_cmd {
+struct nbdx_io_cmd {
 	int				fd;
 	int				op;
 	void				*buf;
@@ -30,9 +30,9 @@ struct xnbd_io_cmd {
 	int				res2;
 	int				pad;
 	void				*user_context;
-	xnbd_completion_cb_t		comp_cb;
+	nbdx_completion_cb_t		comp_cb;
 
-	TAILQ_ENTRY(xnbd_io_cmd)	xnbd_list;
+	TAILQ_ENTRY(nbdx_io_cmd)	nbdx_list;
 };
 
 
@@ -42,49 +42,49 @@ struct xnbd_io_cmd {
 struct backingstore_template {
 	const char *bs_name;
 	size_t bs_datasize;
-	int (*bs_open)(struct xnbd_bs *dev, int fd);
-	void (*bs_close)(struct xnbd_bs *dev);
-	int (*bs_init)(struct xnbd_bs *dev);
-	void (*bs_exit)(struct xnbd_bs *dev);
-	int (*bs_cmd_submit)(struct xnbd_bs *dev, struct xnbd_io_cmd *cmd);
+	int (*bs_open)(struct nbdx_bs *dev, int fd);
+	void (*bs_close)(struct nbdx_bs *dev);
+	int (*bs_init)(struct nbdx_bs *dev);
+	void (*bs_exit)(struct nbdx_bs *dev);
+	int (*bs_cmd_submit)(struct nbdx_bs *dev, struct nbdx_io_cmd *cmd);
 
 	SLIST_ENTRY(backingstore_template)   backingstore_siblings;
 };
 
-struct xnbd_bs {
+struct nbdx_bs {
 	void				*ctx;
 	int				fd;
 	int				is_null;
 	struct stat64   stbuf;
 	struct backingstore_template	*bst;
 	void				*dd;
-	TAILQ_ENTRY(xnbd_bs)        list;
+	TAILQ_ENTRY(nbdx_bs)        list;
 };
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_init								     */
+/* nbdx_bs_init								     */
 /*---------------------------------------------------------------------------*/
-struct xnbd_bs *xnbd_bs_init(void *ctx, const char *name);
+struct nbdx_bs *nbdx_bs_init(void *ctx, const char *name);
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_exit								     */
+/* nbdx_bs_exit								     */
 /*---------------------------------------------------------------------------*/
-void xnbd_bs_exit(struct xnbd_bs *dev);
+void nbdx_bs_exit(struct nbdx_bs *dev);
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_open								     */
+/* nbdx_bs_open								     */
 /*---------------------------------------------------------------------------*/
-int xnbd_bs_open(struct xnbd_bs *dev, int fd);
+int nbdx_bs_open(struct nbdx_bs *dev, int fd);
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_close							     */
+/* nbdx_bs_close							     */
 /*---------------------------------------------------------------------------*/
-void  xnbd_bs_close(struct xnbd_bs *dev);
+void  nbdx_bs_close(struct nbdx_bs *dev);
 
 /*---------------------------------------------------------------------------*/
-/* xnbd_bs_cmd_submit	                                                     */
+/* nbdx_bs_cmd_submit	                                                     */
 /*---------------------------------------------------------------------------*/
-int xnbd_bs_cmd_submit(struct xnbd_bs *dev, struct xnbd_io_cmd *cmd);
+int nbdx_bs_cmd_submit(struct nbdx_bs *dev, struct nbdx_io_cmd *cmd);
 
 /*---------------------------------------------------------------------------*/
 /* register_backingstore_template					     */
