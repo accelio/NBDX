@@ -112,7 +112,7 @@ static void nbdx_aio_iocb_prep(struct nbdx_bs_aio_info *info, int idx,
 	struct iocb *iocb = &info->iocb_arr[idx];
 
 	switch (cmd->op) {
-	case XNBD_CMD_PREAD:
+	case NBDX_CMD_PREAD:
 		/*
 		printf("fd:%d, buf:%p, count:%ld, offset:%ld\n",
 		       cmd->fd, cmd->buf, cmd->bcount, cmd->offset);
@@ -120,7 +120,7 @@ static void nbdx_aio_iocb_prep(struct nbdx_bs_aio_info *info, int idx,
 		io_prep_pread(iocb, cmd->fd, cmd->buf,
 			      cmd->bcount, cmd->offset);
 		break;
-	case XNBD_CMD_PWRITE:
+	case NBDX_CMD_PWRITE:
 		/*
 		printf("%d fd:%d, buf:%p, count:%ld, offset:%ld\n",
 		       cmd->fd, cmd->buf, cmd->bcount, cmd->offset);
@@ -194,7 +194,7 @@ static int nbdx_aio_submit_dev_batch(struct nbdx_bs_aio_info *info)
 static void nbdx_aio_complete_one(struct io_event *ep)
 {
 	struct nbdx_io_cmd *cmd = ep->data;
-	const char *op = (cmd->op == XNBD_CMD_PREAD) ? "read" : "write";
+	const char *op = (cmd->op == NBDX_CMD_PREAD) ? "read" : "write";
 
 	if (ep->res2 != 0)
 		fprintf(stderr, "aio %s:err %lu", op, ep->res2);

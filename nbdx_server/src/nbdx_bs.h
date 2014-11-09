@@ -1,5 +1,5 @@
-#ifndef XNBD_BS_H
-#define XNBD_BS_H
+#ifndef NBDX_BS_H
+#define NBDX_BS_H
 
 #include <sys/queue.h>
 #include <sys/stat.h>
@@ -96,4 +96,4 @@ int register_backingstore_template(struct backingstore_template *bst);
 /*---------------------------------------------------------------------------*/
 struct backingstore_template *get_backingstore_template(const char *name);
 
-#endif  /* #define XNBD_BS_H */
+#endif  /* #define NBDX_BS_H */

@@ -1,4 +1,4 @@
-XNBD
+NBDX
 ====
 
 Accelio based network block device.
@@ -6,12 +6,12 @@ Accelio based network block device.
 1. General
 ==========
 
-Xnbd is a network block device over Accelio framework. Xnbd exploits the
+NBDX is a network block device over Accelio framework. NBDX exploits the
 advantages of the multi-queue implementation in the block layer as well as
 the accelio acceleration facilities to provide fast IO to a remote device.
-Xnbd translates IO operations to libaio submit operations to the remote device.
+NBDX translates IO operations to libaio submit operations to the remote device.
 
-2. Xnbd Prerequisites
+2. NBDX Prerequisites
 =====================
 
 Prior to installing the nbdx package, the following prerequisites are required:

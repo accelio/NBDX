@@ -35,8 +35,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef LIBXNBD_H
-#define LIBXNBD_H
+#ifndef LIBNBDX_H
+#define LIBNBDX_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,8 +63,8 @@ typedef struct nbdx_mr *nbdx_mr_t;
 /* enums								     */
 /*---------------------------------------------------------------------------*/
 enum nbdx_iocb_cmd {
-	XNBD_CMD_PREAD		= 0,
-	XNBD_CMD_PWRITE		= 1,
+	NBDX_CMD_PREAD		= 0,
+	NBDX_CMD_PWRITE		= 1,
 };
 
 /*---------------------------------------------------------------------------*/
@@ -139,7 +139,7 @@ int nbdx_close(int fd);
  *
  * @fd:		file descriptor to work on
  * @maxevents:	max events to receive
- * @ctxp:	On successful creation of the XNBD context, *ctxp is filled
+ * @ctxp:	On successful creation of the NBDX context, *ctxp is filled
  *		in with the resulting  handle.
  *
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
@@ -150,7 +150,7 @@ int nbdx_setup(int fd, int maxevents, nbdx_context_t *ctxp);
 /**
  * nbdx_destroy - destroys an asynchronous I/O context
  *
- * @ctx:	the XNBD context
+ * @ctx:	the NBDX context
  *
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
  * is set appropriately.
@@ -158,10 +158,10 @@ int nbdx_setup(int fd, int maxevents, nbdx_context_t *ctxp);
 int nbdx_destroy(nbdx_context_t ctx);
 
 /**
- * nbdx_submit - queues nr I/O request blocks for processing in the XNBD
+ * nbdx_submit - queues nr I/O request blocks for processing in the NBDX
  *		 context ctx
  *
- * @ctx:	the XNBD context
+ * @ctx:	the NBDX context
  * @nr:		number of events to queue
  * @handles:	array of io control block requests to queue
  *
@@ -173,7 +173,7 @@ int nbdx_submit(nbdx_context_t ctx, long nr, struct nbdx_iocb *ios[]);
 /**
  * nbdx_cancel - attempt to cancel an outstanding asynchronous I/O operation
  *
- * @ctx:	the XNBD context ID of the operation to be canceled
+ * @ctx:	the NBDX context ID of the operation to be canceled
  * @iocb:	control block to cancel
  * @result:	upon success, a copy of the canceled event
  *
@@ -186,7 +186,7 @@ int nbdx_cancel(nbdx_context_t ctx, struct nbdx_iocb *iocb,
 /**
  * nbdx_getevents - read asynchronous I/O events from the completion queue
  *
- * @ctx:	the XNBD context ID
+ * @ctx:	the NBDX context ID
  * @min_nr:	at least min_nr to read
  * @nr:		at most nr to read
  * @events:	returned events array
@@ -202,7 +202,7 @@ int nbdx_getevents(nbdx_context_t ctx, long min_nr, long nr,
 /**
  * nbdx_release - release nbdx resources when events is no longer needed
  *
- * @ctx:	the XNBD context ID
+ * @ctx:	the NBDX context ID
  * @nr:		number of events to release
  * @ihandles:	handles array to release
  *
@@ -214,7 +214,7 @@ int nbdx_release(nbdx_context_t ctx, long nr, struct nbdx_event *events);
 /**
  * nbdx_reg_mr - register memory region for rdma operations
  *
- * @ctx:	the XNBD context ID
+ * @ctx:	the NBDX context ID
  * @buf:	pointer to memory buffer
  * @len:	the buffer's length
  * @mr:		returned memory region
@@ -227,7 +227,7 @@ int nbdx_reg_mr(nbdx_context_t ctx, void *buf, size_t len, nbdx_mr_t *mr);
 /**
  * nbdx_dereg_mr - deregister memory region
  *
- * @ctx:	the XNBD context ID
+ * @ctx:	the NBDX context ID
  * @mr:		the memory region
  *
  * RETURNS: On success, zero is returned.  On error, -1 is returned, and errno
@@ -242,7 +242,7 @@ static inline void nbdx_prep_pread(struct nbdx_iocb *iocb, int fd, void *buf,
 {
 	memset(iocb, 0, sizeof(*iocb));
 	iocb->nbdx_fildes = fd;
-	iocb->nbdx_lio_opcode = XNBD_CMD_PREAD;
+	iocb->nbdx_lio_opcode = NBDX_CMD_PREAD;
 	iocb->u.c.buf = buf;
 	iocb->u.c.nbytes = count;
 	iocb->u.c.offset = offset;
@@ -255,7 +255,7 @@ static inline void nbdx_prep_pwrite(struct nbdx_iocb *iocb, int fd, void *buf,
 {
 	memset(iocb, 0, sizeof(*iocb));
 	iocb->nbdx_fildes = fd;
-	iocb->nbdx_lio_opcode = XNBD_CMD_PWRITE;
+	iocb->nbdx_lio_opcode = NBDX_CMD_PWRITE;
 	iocb->u.c.buf = buf;
 	iocb->u.c.nbytes = count;
 	iocb->u.c.offset = offset;
@@ -264,7 +264,7 @@ static inline void nbdx_prep_pwrite(struct nbdx_iocb *iocb, int fd, void *buf,
 
 static inline void nbdx_set_eventfd(struct nbdx_iocb *iocb, int eventfd)
 {
-	iocb->u.c.flags |= (1 << 0) /* XNBDCB_FLAG_RESFD */;
+	iocb->u.c.flags |= (1 << 0) /* NBDXCB_FLAG_RESFD */;
 	iocb->u.c.resfd = eventfd;
 }
 
@@ -272,5 +272,5 @@ static inline void nbdx_set_eventfd(struct nbdx_iocb *iocb, int eventfd)
 }
 #endif
 
-#endif /* LIBXNBD_H */
+#endif /* LIBNBDX_H */
 

@@ -129,7 +129,7 @@ static ssize_t device_store(struct kobject *kobj,
 			    const char *buf, size_t count)
 {
 	struct nbdx_session *session_d;
-	char xdev_name[MAX_XNBD_DEV_NAME];
+	char xdev_name[MAX_NBDX_DEV_NAME];
 	ssize_t ret;
 
 	session_d = kobj_to_nbdx_session(kobj);

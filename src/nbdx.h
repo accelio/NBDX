@@ -36,8 +36,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef XNBD_H
-#define XNBD_H
+#ifndef NBDX_H
+#define NBDX_H
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -64,12 +64,12 @@
 
 #define MAX_MSG_LEN	    512
 #define MAX_PORTAL_NAME	    256
-#define MAX_XNBD_DEV_NAME   256
+#define MAX_NBDX_DEV_NAME   256
 #define SUPPORTED_DISKS	    256
 #define SUPPORTED_PORTALS   5
-#define XNBD_SECT_SIZE	    512
-#define XNBD_SECT_SHIFT	    ilog2(XNBD_SECT_SIZE)
-#define XNBD_QUEUE_DEPTH    256
+#define NBDX_SECT_SIZE	    512
+#define NBDX_SECT_SHIFT	    ilog2(NBDX_SECT_SIZE)
+#define NBDX_QUEUE_DEPTH    256
 
 enum nbdx_dev_state {
 	DEVICE_OPENNING = 1,
@@ -113,7 +113,7 @@ struct nbdx_file {
 	int			     fd;
 	int			     major; /* major number from kernel */
 	struct r_stat64		     stbuf; /* remote file stats*/
-	char			     file_name[MAX_XNBD_DEV_NAME];
+	char			     file_name[MAX_NBDX_DEV_NAME];
 	struct list_head	     list; /* next node in list of struct nbdx_file */
 	struct gendisk		    *disk;
 	struct request_queue	    *queue; /* The device request queue */
@@ -121,7 +121,7 @@ struct nbdx_file {
 	unsigned int		     queue_depth;
 	unsigned int		     nr_queues;
 	int			     index; /* drive idx */
-	char			     dev_name[MAX_XNBD_DEV_NAME];
+	char			     dev_name[MAX_NBDX_DEV_NAME];
 	struct nbdx_connection	    **nbdx_conns;
 	struct kobject		    kobj;
 	spinlock_t		     state_lock;
@@ -164,5 +164,5 @@ struct nbdx_session *nbdx_session_find_by_portal(struct list_head *s_data_list,
 void nbdx_session_destroy(struct nbdx_session *nbdx_session);
 const char* nbdx_device_state_str(struct nbdx_file *dev);
 
-#endif  /* XNBD_H */
+#endif  /* NBDX_H */
 

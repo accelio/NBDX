@@ -116,7 +116,7 @@ static void nbdx_free_hctx(struct blk_mq_hw_ctx *hctx, unsigned int hctx_index)
 static int nbdx_request(struct request *req, struct nbdx_queue *xq)
 {
 	struct nbdx_file *xdev;
-	unsigned long start = blk_rq_pos(req) << XNBD_SECT_SHIFT;
+	unsigned long start = blk_rq_pos(req) << NBDX_SECT_SHIFT;
 	unsigned long len  = blk_rq_cur_bytes(req);
 	int write = rq_data_dir(req) == WRITE;
 	int err;
@@ -254,7 +254,7 @@ int nbdx_register_block_device(struct nbdx_file *nbdx_file)
 
 	pr_debug("%s called\n", __func__);
 
-	nbdx_mq_reg.queue_depth = XNBD_QUEUE_DEPTH;
+	nbdx_mq_reg.queue_depth = NBDX_QUEUE_DEPTH;
 	nbdx_mq_reg.nr_hw_queues = submit_queues;
 	nbdx_file->major = nbdx_major;
 
@@ -281,9 +281,9 @@ int nbdx_register_block_device(struct nbdx_file *nbdx_file)
 	nbdx_file->disk->fops = &nbdx_ops;
 	nbdx_file->disk->queue = nbdx_file->queue;
 	nbdx_file->disk->private_data = nbdx_file;
-	blk_queue_logical_block_size(nbdx_file->queue, XNBD_SECT_SIZE);
-	blk_queue_physical_block_size(nbdx_file->queue, XNBD_SECT_SIZE);
-	sector_div(size, XNBD_SECT_SIZE);
+	blk_queue_logical_block_size(nbdx_file->queue, NBDX_SECT_SIZE);
+	blk_queue_physical_block_size(nbdx_file->queue, NBDX_SECT_SIZE);
+	sector_div(size, NBDX_SECT_SIZE);
 	set_capacity(nbdx_file->disk, size);
 	sscanf(nbdx_file->dev_name, "%s", nbdx_file->disk->disk_name);
 	add_disk(nbdx_file->disk);

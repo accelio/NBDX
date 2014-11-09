@@ -35,8 +35,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef XNBD_UTILS_H
-#define XNBD_UTILS_H
+#ifndef NBDX_UTILS_H
+#define NBDX_UTILS_H
 
 #include <libnbdx.h>
 
@@ -86,5 +86,5 @@ int unpack_fstat_answer(char *buf, size_t len, struct stat64 *stbuf);
 int unpack_setup_answer(char *buf, size_t len);
 int unpack_destroy_answer(char *buf, size_t len);
 
-#endif  /* XNBD_UTILS_H */
+#endif  /* NBDX_UTILS_H */
 

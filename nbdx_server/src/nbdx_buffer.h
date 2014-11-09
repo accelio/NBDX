@@ -35,8 +35,8 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef XNBD_BUFFER_H
-#define XNBD_BUFFER_H
+#ifndef NBDX_BUFFER_H
+#define NBDX_BUFFER_H
 
 
 #include <stdint.h>
@@ -140,4 +140,4 @@ static inline const char *unpack_s64(int64_t *data, const char *buffer)
 }
 
 
-#endif /* XNBD_BUFFER_H */
+#endif /* NBDX_BUFFER_H */

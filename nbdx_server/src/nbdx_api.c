@@ -59,7 +59,7 @@
 /* preprocessor defines							     */
 /*---------------------------------------------------------------------------*/
 #define MAX_MSG_LEN		512
-#define XNBD_MAX_NR		2048
+#define NBDX_MAX_NR		2048
 #define USECS_IN_SEC		1000000
 #define NSECS_IN_USEC		1000
 #define NSECS_IN_SEC		1000000000
@@ -68,9 +68,9 @@
 #define ptr_from_int64(p)	(void *)(unsigned long)(p)
 
 #ifdef VISIBILITY
-#define __XNBD_PUBLIC __attribute__((visibility("default")))
+#define __NBDX_PUBLIC __attribute__((visibility("default")))
 #else
-#define __XNBD_PUBLIC
+#define __NBDX_PUBLIC
 #endif
 
 
@@ -349,14 +349,14 @@ static int on_response(struct xio_session *session,
 		   rsp->in.header.iov_base);
 
 	switch (command) {
-	case XNBD_CMD_IO_SUBMIT:
+	case NBDX_CMD_IO_SUBMIT:
 		on_submit_answer(rsp);
 		break;
-	case XNBD_CMD_OPEN:
-	case XNBD_CMD_FSTAT:
-	case XNBD_CMD_CLOSE:
-	case XNBD_CMD_IO_SETUP:
-	case XNBD_CMD_IO_DESTROY:
+	case NBDX_CMD_OPEN:
+	case NBDX_CMD_FSTAT:
+	case NBDX_CMD_CLOSE:
+	case NBDX_CMD_IO_SETUP:
+	case NBDX_CMD_IO_DESTROY:
 		/* break the loop */
 		session_data->cmd_rsp = rsp;
 		xio_context_stop_loop(session_data->ctx, 0);
@@ -381,7 +381,7 @@ struct xio_session_ops ses_ops = {
 /*---------------------------------------------------------------------------*/
 /* nbdx_open								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int nbdx_open(const struct sockaddr *addr, socklen_t addrlen,
+__NBDX_PUBLIC int nbdx_open(const struct sockaddr *addr, socklen_t addrlen,
 	      const char *pathname, int flags)
 
 {
@@ -489,7 +489,7 @@ cleanup:
 /*---------------------------------------------------------------------------*/
 /* nbdx_close								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int nbdx_close(int fd)
+__NBDX_PUBLIC int nbdx_close(int fd)
 {
 	int				retval = -1;
 	int				nbdx_err = 0;
@@ -550,7 +550,7 @@ cleanup:
 /*---------------------------------------------------------------------------*/
 /* nbdx_fstat								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int nbdx_fstat(int fd, struct stat64 *stbuf)
+__NBDX_PUBLIC int nbdx_fstat(int fd, struct stat64 *stbuf)
 {
 	int				retval;
 
@@ -598,7 +598,7 @@ __XNBD_PUBLIC int nbdx_fstat(int fd, struct stat64 *stbuf)
 /*---------------------------------------------------------------------------*/
 /* nbdx_setup								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int nbdx_setup(int fd, int maxevents, nbdx_context_t *ctxp)
+__NBDX_PUBLIC int nbdx_setup(int fd, int maxevents, nbdx_context_t *ctxp)
 {
 	int				i;
 	nbdx_context_t			ctx;
@@ -671,7 +671,7 @@ __XNBD_PUBLIC int nbdx_setup(int fd, int maxevents, nbdx_context_t *ctxp)
 /*---------------------------------------------------------------------------*/
 /* nbdx_destroy								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int nbdx_destroy(nbdx_context_t ctx)
+__NBDX_PUBLIC int nbdx_destroy(nbdx_context_t ctx)
 {
 	struct nbdx_session_data *session_data;
 	int			 retval  = 0;
@@ -713,7 +713,7 @@ cleanup:
 /*---------------------------------------------------------------------------*/
 /* nbdx_submit								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int nbdx_submit(nbdx_context_t ctx,
+__NBDX_PUBLIC int nbdx_submit(nbdx_context_t ctx,
 			      long nr, struct nbdx_iocb *ios[])
 {
 	struct nbdx_session_data	*session_data;
@@ -731,11 +731,11 @@ __XNBD_PUBLIC int nbdx_submit(nbdx_context_t ctx,
 	if ((session_data->npending  + nr) > session_data->maxevents)
 		nr = session_data->maxevents - session_data->npending;
 
-	if ((session_data->npending  + nr) > XNBD_MAX_NR)
-		nr = XNBD_MAX_NR - session_data->npending;
+	if ((session_data->npending  + nr) > NBDX_MAX_NR)
+		nr = NBDX_MAX_NR - session_data->npending;
 
-	if (nr > XNBD_MAX_NR)
-		nr = XNBD_MAX_NR;
+	if (nr > NBDX_MAX_NR)
+		nr = NBDX_MAX_NR;
 
 
 	for (i = 0; i < nr; i++) {
@@ -756,7 +756,7 @@ __XNBD_PUBLIC int nbdx_submit(nbdx_context_t ctx,
 				(i == (nr - 1)),
 				io_u->req.out.header.iov_base,
 				&io_u->req.out.header.iov_len);
-		if (ios[i]->nbdx_lio_opcode == XNBD_CMD_PWRITE) {
+		if (ios[i]->nbdx_lio_opcode == NBDX_CMD_PWRITE) {
 			io_u->req.out.data_iov[0].iov_base = ios[i]->u.c.buf;
 			io_u->req.out.data_iov[0].iov_len = ios[i]->u.c.nbytes;
 			if (ios[i]->u.c.mr)
@@ -801,7 +801,7 @@ __XNBD_PUBLIC int nbdx_submit(nbdx_context_t ctx,
 /*---------------------------------------------------------------------------*/
 /* rsd_getevents							     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int nbdx_getevents(nbdx_context_t ctx, long min_nr, long nr,
+__NBDX_PUBLIC int nbdx_getevents(nbdx_context_t ctx, long min_nr, long nr,
 		   struct nbdx_event *events, struct timespec *t)
 {
 	struct nbdx_session_data	*session_data;
@@ -889,7 +889,7 @@ restart:
 /*---------------------------------------------------------------------------*/
 /* nbdx_release								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int nbdx_release(nbdx_context_t ctx, long nr,
+__NBDX_PUBLIC int nbdx_release(nbdx_context_t ctx, long nr,
 				struct nbdx_event *events)
 {
 	int				i;
@@ -912,7 +912,7 @@ __XNBD_PUBLIC int nbdx_release(nbdx_context_t ctx, long nr,
 /*---------------------------------------------------------------------------*/
 /* nbdx_reg_mr								     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int nbdx_reg_mr(nbdx_context_t ctx, void *buf,
+__NBDX_PUBLIC int nbdx_reg_mr(nbdx_context_t ctx, void *buf,
 			      size_t len, nbdx_mr_t *mr)
 {
 	*mr = malloc(sizeof(struct nbdx_mr));
@@ -933,7 +933,7 @@ __XNBD_PUBLIC int nbdx_reg_mr(nbdx_context_t ctx, void *buf,
 /*---------------------------------------------------------------------------*/
 /* nbdx_dereg_mr							     */
 /*---------------------------------------------------------------------------*/
-__XNBD_PUBLIC int nbdx_dereg_mr(nbdx_context_t ctx, nbdx_mr_t mr)
+__NBDX_PUBLIC int nbdx_dereg_mr(nbdx_context_t ctx, nbdx_mr_t mr)
 {
 	int retval = xio_dereg_mr(&mr->omr);
 

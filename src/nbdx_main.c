@@ -580,7 +580,7 @@ int nbdx_create_device(struct nbdx_session *nbdx_session,
 	nbdx_file->index = nbdx_indexes++;
 	sprintf(nbdx_file->dev_name, "nbdx%d", nbdx_file->index);
 	nbdx_file->nr_queues = submit_queues;
-	nbdx_file->queue_depth = XNBD_QUEUE_DEPTH;
+	nbdx_file->queue_depth = NBDX_QUEUE_DEPTH;
 	nbdx_file->nbdx_conns = nbdx_session->nbdx_conns;
 
 	spin_lock_init(&nbdx_file->state_lock);
@@ -851,7 +851,7 @@ int nbdx_session_create(const char *portal)
 	}
 
 	ret = nbdx_setup_remote_session(nbdx_session,
-			submit_queues * XNBD_QUEUE_DEPTH);
+			submit_queues * NBDX_QUEUE_DEPTH);
 	if (ret) {
 		pr_err("failed to setup remote session %s ret=%d\n",
 				nbdx_session->portal, ret);

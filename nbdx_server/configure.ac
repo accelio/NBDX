@@ -108,12 +108,12 @@ if test -d "${GIT_DIR:-${ac_top_srcdir:-./}/.git}" ; then
 else
 	GITHEAD=
 fi
-echo "const char XNBD_SERVER_GIT_HEAD@<:@@:>@ = \"GIT_VERSION: $GITHEAD\";" \/\* for use with strings \*\/ >version.c
-echo "const char XNBD_SERVER_GIT_HEAD_STRING@<:@@:>@ = \"$GITHEAD\";" >>version.c
+echo "const char NBDX_SERVER_GIT_HEAD@<:@@:>@ = \"GIT_VERSION: $GITHEAD\";" \/\* for use with strings \*\/ >version.c
+echo "const char NBDX_SERVER_GIT_HEAD_STRING@<:@@:>@ = \"$GITHEAD\";" >>version.c
 
 AC_MSG_CHECKING([for git head])
 AC_MSG_RESULT([$GITHEAD])
-AC_DEFINE_UNQUOTED([XNBD_SERVER_GITHEAD], ["$GITHEAD"], [Git commit used to build nbdx server])
+AC_DEFINE_UNQUOTED([NBDX_SERVER_GITHEAD], ["$GITHEAD"], [Git commit used to build nbdx server])
 
 # distribute additional compiler and linker flags
 # --> set these variables instead of CFLAGS or LDFLAGS

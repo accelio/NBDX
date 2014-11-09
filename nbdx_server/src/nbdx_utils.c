@@ -168,7 +168,7 @@ void pack_open_command(const char *pathname, int flags, void *buf, size_t *len)
 	unsigned int	path_len = strlen(pathname) + 1;
 	char		*buffer = buf;
 	unsigned int	overall_size = sizeof(flags) + path_len;
-	struct nbdx_command cmd = { XNBD_CMD_OPEN, overall_size };
+	struct nbdx_command cmd = { NBDX_CMD_OPEN, overall_size };
 
 	pack_mem(pathname, path_len,
 	pack_u32((uint32_t *)&flags,
@@ -186,7 +186,7 @@ void pack_close_command(int fd, void *buf, size_t *len)
 {
 	char		*buffer = buf;
 	unsigned int	overall_size = sizeof(fd);
-	struct nbdx_command cmd = { XNBD_CMD_CLOSE, overall_size };
+	struct nbdx_command cmd = { NBDX_CMD_CLOSE, overall_size };
 
 	pack_u32((uint32_t *)&fd,
 	pack_u32(&cmd.data_len,
@@ -203,7 +203,7 @@ void pack_fstat_command(int fd, void *buf, size_t *len)
 {
 	char		*buffer = buf;
 	unsigned int	overall_size = sizeof(fd);
-	struct nbdx_command cmd = { XNBD_CMD_FSTAT, overall_size };
+	struct nbdx_command cmd = { NBDX_CMD_FSTAT, overall_size };
 
 	pack_u32((uint32_t *)&fd,
 	pack_u32(&cmd.data_len,
@@ -221,7 +221,7 @@ void pack_setup_command(int maxevents,
 {
 	char		*buffer = buf;
 	unsigned int	overall_size = sizeof(maxevents);
-	struct nbdx_command cmd = { XNBD_CMD_IO_SETUP, overall_size };
+	struct nbdx_command cmd = { NBDX_CMD_IO_SETUP, overall_size };
 
 	pack_u32((uint32_t *)&maxevents,
 	pack_u32(&cmd.data_len,
@@ -238,7 +238,7 @@ void pack_destroy_command(void *buf, size_t *len)
 {
 	char		*buffer = buf;
 	unsigned int	overall_size = 0;
-	struct nbdx_command cmd = { XNBD_CMD_IO_DESTROY, overall_size };
+	struct nbdx_command cmd = { NBDX_CMD_IO_DESTROY, overall_size };
 
 	pack_u32(&cmd.data_len,
 	pack_u32(&cmd.command,
@@ -259,7 +259,7 @@ int unpack_open_answer(char *buf, size_t len, int *fd)
 			  unpack_u32(&ans.data_len,
 			  unpack_u32(&ans.command,
 			  buf))));
-	if ((ans.command != XNBD_CMD_OPEN) ||
+	if ((ans.command != NBDX_CMD_OPEN) ||
 	    ((ans.ret_errno == 0) && (sizeof(*fd) != ans.data_len))) {
 		errno = EINVAL;
 		return -1;
@@ -286,7 +286,7 @@ int unpack_close_answer(char *buf, size_t len)
 			  unpack_u32(&ans.data_len,
 			  unpack_u32(&ans.command,
 			  buf))));
-	if ((ans.command != XNBD_CMD_CLOSE) ||
+	if ((ans.command != NBDX_CMD_CLOSE) ||
 	    (0 != ans.data_len)) {
 		errno = EINVAL;
 		return -1;
@@ -312,7 +312,7 @@ int unpack_fstat_answer(char *buf, size_t len, struct stat64 *stbuf)
 		 unpack_u32(&ans.data_len,
 		 unpack_u32(&ans.command,
 		 buf))));
-	if ((ans.command != XNBD_CMD_FSTAT) ||
+	if ((ans.command != NBDX_CMD_FSTAT) ||
 	    (STAT_BLOCK_SIZE != ans.data_len)) {
 		errno = EINVAL;
 		return -1;
@@ -340,7 +340,7 @@ int unpack_setup_answer(char *buf, size_t len)
 	unpack_u32(&ans.command,
 		   buf))));
 
-	if ((ans.command != XNBD_CMD_IO_SETUP) ||
+	if ((ans.command != NBDX_CMD_IO_SETUP) ||
 	    (0 != ans.data_len)) {
 		errno = EINVAL;
 		return -1;
@@ -362,7 +362,7 @@ void pack_submit_command(struct nbdx_iocb *iocb, int is_last_in_batch,
 	char	*buffer = buf;
 	unsigned overall_size = SUBMIT_BLOCK_SIZE + sizeof(uint32_t);
 
-	struct nbdx_command cmd = { XNBD_CMD_IO_SUBMIT, overall_size };
+	struct nbdx_command cmd = { NBDX_CMD_IO_SUBMIT, overall_size };
 
 	pack_iocb(iocb,
 	pack_u32((uint32_t *)&is_last_in_batch,
@@ -386,7 +386,7 @@ int unpack_destroy_answer(char *buf, size_t len)
 	unpack_u32(&ans.command,
 		   buf))));
 
-	if ((ans.command != XNBD_CMD_IO_DESTROY) ||
+	if ((ans.command != NBDX_CMD_IO_DESTROY) ||
 	    (0 != ans.data_len)) {
 		errno = EINVAL;
 		return -1;

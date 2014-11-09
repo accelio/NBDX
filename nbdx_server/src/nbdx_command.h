@@ -35,26 +35,26 @@
  * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  * POSSIBILITY OF SUCH DAMAGE.
  */
-#ifndef XNBD_COMMAND_H
-#define XNBD_COMMAND_H
+#ifndef NBDX_COMMAND_H
+#define NBDX_COMMAND_H
 
 #include <stdint.h>
 
 /** commands for nbdx server */
 enum nbdx_server_commands {
-	XNBD_CMD_FIRST		= 0,
-	XNBD_CMD_UNKNOWN	= 1,
+	NBDX_CMD_FIRST		= 0,
+	NBDX_CMD_UNKNOWN	= 1,
 
 	/* nbdx commands */
-	XNBD_CMD_OPEN		= 10,
-	XNBD_CMD_FSTAT,
-	XNBD_CMD_CLOSE,
-	XNBD_CMD_IO_SETUP,
-	XNBD_CMD_IO_SUBMIT,
-	XNBD_CMD_IO_RELEASE,
-	XNBD_CMD_IO_DESTROY,
+	NBDX_CMD_OPEN		= 10,
+	NBDX_CMD_FSTAT,
+	NBDX_CMD_CLOSE,
+	NBDX_CMD_IO_SETUP,
+	NBDX_CMD_IO_SUBMIT,
+	NBDX_CMD_IO_RELEASE,
+	NBDX_CMD_IO_DESTROY,
 
-	XNBD_CMD_LAST
+	NBDX_CMD_LAST
 };
 
 /** command for server */
@@ -71,5 +71,5 @@ struct nbdx_answer {
 	int32_t ret_errno;
 };
 
-#endif /* XNBD_COMMAND_H */
+#endif /* NBDX_COMMAND_H */
 

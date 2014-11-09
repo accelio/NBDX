@@ -248,7 +248,7 @@ static int nbdx_handle_open(void *prv_session_data,
 
 reject:
 	if (fd == -1 || errno) {
-		struct nbdx_answer ans = {XNBD_CMD_OPEN, 0,
+		struct nbdx_answer ans = {NBDX_CMD_OPEN, 0,
 					   -1, errno};
 		pack_u32((uint32_t *)&ans.ret_errno,
 			 pack_u32((uint32_t *)&ans.ret,
@@ -258,7 +258,7 @@ reject:
 		fprintf(stderr, "open %s failed %m\n", pathname);
 	 } else {
 		 unsigned overall_size = sizeof(fd);
-		 struct nbdx_answer ans = {XNBD_CMD_OPEN,
+		 struct nbdx_answer ans = {NBDX_CMD_OPEN,
 					   overall_size, 0, 0};
 		 pack_u32((uint32_t *)&fd,
 			  pack_u32((uint32_t *)&ans.ret_errno,
@@ -324,14 +324,14 @@ static int nbdx_handle_close(void *prv_session_data,
 
 reject:
 	if (retval != 0) {
-		struct nbdx_answer ans = { XNBD_CMD_CLOSE, 0, -1, errno };
+		struct nbdx_answer ans = { NBDX_CMD_CLOSE, 0, -1, errno };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
 		pack_u32(&ans.command,
 			 pd->rsp_hdr))));
 	} else {
-		struct nbdx_answer ans = { XNBD_CMD_CLOSE, 0, 0, 0 };
+		struct nbdx_answer ans = { NBDX_CMD_CLOSE, 0, 0, 0 };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
@@ -382,14 +382,14 @@ static int nbdx_handle_fstat(void *prv_session_data,
 
 reject:
 	if (retval != 0) {
-		struct nbdx_answer ans = { XNBD_CMD_FSTAT, 0, -1, errno };
+		struct nbdx_answer ans = { NBDX_CMD_FSTAT, 0, -1, errno };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
 		pack_u32(&ans.command,
 			  pd->rsp_hdr))));
 	} else {
-		struct nbdx_answer ans = {XNBD_CMD_FSTAT,
+		struct nbdx_answer ans = {NBDX_CMD_FSTAT,
 					  STAT_BLOCK_SIZE, 0, 0};
 		pack_stat64(&bs_dev->stbuf,
 		pack_u32((uint32_t *)&ans.ret_errno,
@@ -454,14 +454,14 @@ static int nbdx_handle_setup(void *prv_session_data,
 
 reject:
 	if (err) {
-		struct nbdx_answer ans = { XNBD_CMD_IO_SETUP, 0, -1, err };
+		struct nbdx_answer ans = { NBDX_CMD_IO_SETUP, 0, -1, err };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
 		pack_u32(&ans.command,
 			 pd->rsp_hdr))));
 	} else {
-		struct nbdx_answer ans = { XNBD_CMD_IO_SETUP, 0, 0, 0 };
+		struct nbdx_answer ans = { NBDX_CMD_IO_SETUP, 0, 0, 0 };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
@@ -517,14 +517,14 @@ static int nbdx_handle_destroy(void *prv_session_data,
 
 reject:
 	if (retval == -1) {
-		struct nbdx_answer ans = { XNBD_CMD_IO_DESTROY, 0, -1, errno };
+		struct nbdx_answer ans = { NBDX_CMD_IO_DESTROY, 0, -1, errno };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
 		pack_u32(&ans.command,
 			 pd->rsp_hdr))));
 	} else {
-		struct nbdx_answer ans = { XNBD_CMD_IO_DESTROY, 0, 0, 0 };
+		struct nbdx_answer ans = { NBDX_CMD_IO_DESTROY, 0, 0, 0 };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
 		pack_u32(&ans.data_len,
@@ -551,7 +551,7 @@ int nbdx_reject_request(void *prv_session_data,
 {
 	struct nbdx_io_portal_data	*pd = prv_portal_data;
 
-	struct nbdx_answer ans = { XNBD_CMD_UNKNOWN, 0, -1, errno };
+	struct nbdx_answer ans = { NBDX_CMD_UNKNOWN, 0, -1, errno };
 	pack_u32((uint32_t *)&ans.ret_errno,
 	pack_u32((uint32_t *)&ans.ret,
 	pack_u32(&ans.data_len,
@@ -573,7 +573,7 @@ int nbdx_reject_request(void *prv_session_data,
 static int on_cmd_submit_comp(struct nbdx_io_cmd *iocmd)
 {
 	struct nbdx_io_u	*io_u = iocmd->user_context;
-	struct nbdx_answer	ans = { XNBD_CMD_IO_SUBMIT, 0, 0, 0 };
+	struct nbdx_answer	ans = { NBDX_CMD_IO_SUBMIT, 0, 0, 0 };
 
 	pack_u32((uint32_t *)&iocmd->res2,
 	pack_u32((uint32_t *)&iocmd->res,
@@ -586,7 +586,7 @@ static int on_cmd_submit_comp(struct nbdx_io_cmd *iocmd)
 	io_u->rsp->out.header.iov_len = sizeof(struct nbdx_answer) +
 					2*sizeof(uint32_t);
 
-	if ( io_u->iocmd.op == XNBD_CMD_PREAD) {
+	if ( io_u->iocmd.op == NBDX_CMD_PREAD) {
 		if (iocmd->res != iocmd->bcount) {
 			if (iocmd->res < iocmd->bcount) {
 				io_u->rsp->out.data_iov[0].iov_len = iocmd->res;
@@ -651,7 +651,7 @@ static int nbdx_handle_submit(void *prv_session_data,
 	io_u->iocmd.op			= iocb.nbdx_lio_opcode;
 	io_u->iocmd.bcount		= iocb.u.c.nbytes;
 
-	if ( io_u->iocmd.op == XNBD_CMD_PWRITE) {
+	if ( io_u->iocmd.op == NBDX_CMD_PWRITE) {
 		io_u->iocmd.buf			= req->in.data_iov[0].iov_base;
 		io_u->iocmd.mr			= req->in.data_iov[0].mr;
 	} else {
@@ -689,7 +689,7 @@ reject:
 	pd->io_u_free_nr++;
 	msg_reset(&pd->rsp);
 
-	ans.command	= XNBD_CMD_IO_SUBMIT;
+	ans.command	= NBDX_CMD_IO_SUBMIT;
 	ans.data_len	= 0;
 	ans.ret		= -1;
 	ans.ret_errno	= retval;
@@ -754,38 +754,38 @@ int nbdx_handler_on_req(void *prv_session_data,
 			      (char *)buffer);
 
 	switch (cmd.command) {
-	case XNBD_CMD_IO_SUBMIT:
+	case NBDX_CMD_IO_SUBMIT:
 		nbdx_handle_submit(prv_session_data,
 				   prv_portal_data,
 				   &cmd, cmd_data,
 				   req);
 		break;
-	case XNBD_CMD_OPEN:
+	case NBDX_CMD_OPEN:
 		nbdx_handle_open(prv_session_data,
 				 prv_portal_data,
 				 &cmd, cmd_data,
 				 req);
 		break;
-	case XNBD_CMD_CLOSE:
+	case NBDX_CMD_CLOSE:
 		nbdx_handle_close(prv_session_data,
 				  prv_portal_data,
 				  &cmd, cmd_data,
 				  req);
 		break;
-	case XNBD_CMD_FSTAT:
+	case NBDX_CMD_FSTAT:
 		nbdx_handle_fstat(prv_session_data,
 				  prv_portal_data,
 				  &cmd, cmd_data,
 				  req);
 		break;
-	case XNBD_CMD_IO_SETUP:
+	case NBDX_CMD_IO_SETUP:
 		/* Once per Session */
 		nbdx_handle_setup(prv_session_data,
 				  prv_portal_data,
 				  &cmd, cmd_data,
 				  req);
 		break;
-	case XNBD_CMD_IO_DESTROY:
+	case NBDX_CMD_IO_DESTROY:
 		/* Once per Session */
 		nbdx_handle_destroy(prv_session_data,
 				    prv_portal_data,
@@ -820,17 +820,17 @@ void nbdx_handler_on_rsp_comp(void *prv_session_data,
 	unpack_u32(&cmd.command, buffer);
 
 	switch (cmd.command) {
-	case XNBD_CMD_IO_SUBMIT:
+	case NBDX_CMD_IO_SUBMIT:
 		nbdx_handle_submit_comp(prv_session_data,
 					prv_portal_data,
 					rsp);
 		break;
-	case XNBD_CMD_CLOSE:
-	case XNBD_CMD_UNKNOWN:
-	case XNBD_CMD_IO_DESTROY:
-	case XNBD_CMD_OPEN:
-	case XNBD_CMD_FSTAT:
-	case XNBD_CMD_IO_SETUP:
+	case NBDX_CMD_CLOSE:
+	case NBDX_CMD_UNKNOWN:
+	case NBDX_CMD_IO_DESTROY:
+	case NBDX_CMD_OPEN:
+	case NBDX_CMD_FSTAT:
+	case NBDX_CMD_IO_SETUP:
 		break;
 	default:
 		printf("unknown answer %d\n", cmd.command);
