@@ -154,7 +154,7 @@ static struct msg_pool *msg_pool_alloc(int max,
 
 	buf = calloc(len, sizeof(uint8_t));
 	if (!buf) {
-		fprintf(stderr, "Couldn't allocate message pool\n");
+		fprintf(stderr, "Couldn't allocate message pool buf\n");
 		exit(1);
 	}
 
@@ -175,8 +175,8 @@ static struct msg_pool *msg_pool_alloc(int max,
 
 	/* header */
 	msg_pool->header = calloc(hdrlen, sizeof(uint8_t));
-	if (!buf) {
-		fprintf(stderr, "Couldn't allocate message pool\n");
+	if (!msg_pool->header) {
+		fprintf(stderr, "Couldn't allocate message pool header\n");
 		exit(1);
 	}
 
