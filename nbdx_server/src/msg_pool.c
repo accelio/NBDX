@@ -210,11 +210,11 @@ static struct msg_pool *msg_pool_alloc(int max,
 			header = header + out_hdrlen;
 		}
 		if (out_datalen) {
-			msg->out.data_iov[0].iov_base = data;
-			msg->out.data_iov[0].iov_len = out_datalen;
-			msg->out.data_iov[0].mr = msg_pool->mr;
+			msg->out.data_iov.sglist[0].iov_base = data;
+			msg->out.data_iov.sglist[0].iov_len = out_datalen;
+			msg->out.data_iov.sglist[0].mr = msg_pool->mr;
 			data = data + out_datalen;
-			msg->out.data_iovlen = 1;
+			msg->out.data_iov.nents = 1;
 		}
 		if (in_hdrlen) {
 			msg->in.header.iov_base = header;
@@ -222,11 +222,11 @@ static struct msg_pool *msg_pool_alloc(int max,
 			header = header + in_hdrlen;
 		}
 		if (in_datalen) {
-			msg->in.data_iov[0].iov_base = data;
-			msg->in.data_iov[0].iov_len = in_datalen;
-			msg->in.data_iov[0].mr = msg_pool->mr;
+			msg->in.data_iov.sglist[0].iov_base = data;
+			msg->in.data_iov.sglist[0].iov_len = in_datalen;
+			msg->in.data_iov.sglist[0].mr = msg_pool->mr;
 			data = data + in_datalen;
-			msg->in.data_iovlen = 1;
+			msg->in.data_iov.nents = 1;
 		}
 	}
 	msg_pool->in_hdrlen	= in_hdrlen;
@@ -278,8 +278,8 @@ struct xio_msg *msg_pool_get(struct msg_pool *pool)
 void msg_pool_put(struct msg_pool *pool, struct xio_msg *msg)
 {
 	msg->in.header.iov_len = 0;
-	msg->in.data_iovlen = 0;
-	msg->out.data_iovlen = 0;
+	msg->in.data_iov.nents = 0;
+	msg->out.data_iov.nents = 0;
 	msg->out.header.iov_len = 0;
 
 	*--pool->stack_ptr = msg;
@@ -321,9 +321,9 @@ void msg_reset(struct xio_msg *msg)
 {
 	msg->in.header.iov_base = NULL;
 	msg->in.header.iov_len = 0;
-	msg->in.data_iovlen = 0;
-	msg->out.data_iovlen = 0;
+	msg->in.data_iov.nents = 0;
 	msg->out.header.iov_len = 0;
+	msg->out.data_iov.nents = 0;
 	msg->next = NULL;
 }
 

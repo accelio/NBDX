@@ -51,6 +51,7 @@
 /*---------------------------------------------------------------------------*/
 #define MAX_THREADS		6
 #define SIMULATE_DESTROY	0
+#define MAX_SGL_LEN		128
 
 #ifndef SLIST_FOREACH_SAFE
 #define	SLIST_FOREACH_SAFE(var, head, field, tvar)			 \
@@ -376,8 +377,19 @@ int main(int argc, char *argv[])
 	uint16_t		port = atoi(argv[2]);
 	int			curr_cpu;
 	int			max_cpus;
+	int         size_iov = MAX_SGL_LEN;
 
 	xio_init();
+
+	/* set accelio max message vector used (default is 4).
+	 * this values should be equal for client and server.
+	 * TODO: check way more than 4 elements are needed, if using
+	 * only one sgl entry.
+	 */
+	xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO,
+		    XIO_OPTNAME_MAX_IN_IOVLEN, &size_iov, sizeof(int));
+	xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO,
+		    XIO_OPTNAME_MAX_OUT_IOVLEN, &size_iov, sizeof(int));
 
 	curr_cpu = sched_getcpu();
 	max_cpus = sysconf(_SC_NPROCESSORS_ONLN);

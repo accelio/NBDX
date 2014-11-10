@@ -444,7 +444,7 @@ static int nbdx_handle_setup(void *prv_session_data,
 		/* register each io_u in the free list */
 		for (j = 0; j < cpd->io_u_free_nr; j++) {
 			cpd->io_us_free[j].rsp = msg_pool_get(cpd->rsp_pool);
-			cpd->io_us_free[j].buf = cpd->io_us_free[j].rsp->out.data_iov[0].iov_base;
+			cpd->io_us_free[j].buf = cpd->io_us_free[j].rsp->out.data_iov.sglist[0].iov_base;
 			TAILQ_INSERT_TAIL(&cpd->io_u_free_list,
 					  &cpd->io_us_free[j],
 					  io_u_list);
@@ -558,7 +558,7 @@ int nbdx_reject_request(void *prv_session_data,
 		 pd->rsp_hdr))));
 
 	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer);
-	pd->rsp.out.data_iovlen = 0;
+	pd->rsp.out.data_iov.nents = 0;
 	pd->rsp.request = req;
 
 	xio_send_response(&pd->rsp);
@@ -588,17 +588,17 @@ static int on_cmd_submit_comp(struct nbdx_io_cmd *iocmd)
 	if ( io_u->iocmd.op == NBDX_CMD_PREAD) {
 		if (iocmd->res != iocmd->bcount) {
 			if (iocmd->res < iocmd->bcount) {
-				io_u->rsp->out.data_iov[0].iov_len = iocmd->res;
+				io_u->rsp->out.data_iov.sglist[0].iov_len = iocmd->res;
 			} else {
-				io_u->rsp->out.data_iovlen	   = 0;
-				io_u->rsp->out.data_iov[0].iov_len = iocmd->res;
+				io_u->rsp->out.data_iov.nents      = 0;
+				io_u->rsp->out.data_iov.sglist[0].iov_len = iocmd->res;
 			}
 		} else {
-			io_u->rsp->out.data_iov[0].iov_len = iocmd->bcount;
+			io_u->rsp->out.data_iov.sglist[0].iov_len = iocmd->bcount;
 		}
 	} else {
-		io_u->rsp->out.data_iov[0].iov_len = 0;
-		io_u->rsp->out.data_iovlen = 0;
+		io_u->rsp->out.data_iov.sglist[0].iov_len = 0;
+		io_u->rsp->out.data_iov.nents = 0;
 	}
 
 	xio_send_response(io_u->rsp);
@@ -651,11 +651,11 @@ static int nbdx_handle_submit(void *prv_session_data,
 	io_u->iocmd.bcount		= iocb.u.c.nbytes;
 
 	if ( io_u->iocmd.op == NBDX_CMD_PWRITE) {
-		io_u->iocmd.buf			= req->in.data_iov[0].iov_base;
-		io_u->iocmd.mr			= req->in.data_iov[0].mr;
+		io_u->iocmd.buf         = req->in.data_iov.sglist[0].iov_base;
+		io_u->iocmd.mr          = req->in.data_iov.sglist[0].mr;
 	} else {
-		io_u->iocmd.buf			= io_u->rsp->out.data_iov[0].iov_base;
-		io_u->iocmd.mr			= io_u->rsp->out.data_iov[0].mr;
+		io_u->iocmd.buf         = io_u->rsp->out.data_iov.sglist[0].iov_base;
+		io_u->iocmd.mr          = io_u->rsp->out.data_iov.sglist[0].mr;
 	}
 
 	bs_dev = nbdx_lookup_bs_dev(io_u->iocmd.fd, pd);
@@ -674,7 +674,7 @@ static int nbdx_handle_submit(void *prv_session_data,
 
 	io_u->rsp->request		= req;
 	io_u->rsp->user_context		= io_u;
-	io_u->rsp->out.data_iovlen	= 1;
+	io_u->rsp->out.data_iov.nents   = 1;
 
 
 	/* issues request to bs */
@@ -718,7 +718,7 @@ static int nbdx_handle_submit_comp(void *prv_session_data,
 	struct nbdx_io_u	   *io_u = rsp->user_context;
 
 	if (io_u) {
-		rsp->out.data_iov[0].iov_base = io_u->buf;
+		rsp->out.data_iov.sglist[0].iov_base = io_u->buf;
 		TAILQ_INSERT_TAIL(&pd->io_u_free_list, io_u, io_u_list);
 		pd->io_u_free_nr++;
 	}
