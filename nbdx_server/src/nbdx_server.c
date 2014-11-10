@@ -335,7 +335,7 @@ static int on_new_session(struct xio_session *session,
 	struct nbdx_session_data *ses_data;
 	int i;
 
-	portals = portals_get(server_data, req->uri, req->user_context);
+	portals = portals_get(server_data, req->uri, req->private_data);
 
 	/* alloc and  and initialize */
 	ses_data = calloc(1, sizeof(*ses_data));
