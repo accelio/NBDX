@@ -177,7 +177,7 @@ static int on_request(struct xio_session *session,
 {
 	struct nbdx_thread_data		*tdata = cb_user_context;
 	struct nbdx_session_data	*ses_data, *tmp_ses_data;
-	int				i, disconnect = 0;
+	int				i, retval;
 
 	SLIST_FOREACH_SAFE(ses_data, &tdata->server_data->ses_list,
 			   srv_ses_list, tmp_ses_data) {
@@ -185,18 +185,12 @@ static int on_request(struct xio_session *session,
 			for (i = 0; i < MAX_THREADS; i++) {
 				if (ses_data->portal_data[i].tdata == tdata) {
 					/* process request */
-					disconnect = nbdx_handler_on_req(
-					      ses_data->dd_data,
-					      ses_data->portal_data[i].dd_data,
-					      req);
-					if (disconnect) {
-						struct xio_connection *conn = xio_get_connection(
-								session,
-								tdata->ctx);
-						xio_disconnect(conn);
-						disconnect = 0;
-					}
-					return 0;
+					retval = nbdx_handler_on_req(ses_data->dd_data,
+								     ses_data->portal_data[i].dd_data,
+								     req);
+					if (retval)
+						fprintf(stdout, "failed to process request\n");
+					return retval;
 				}
 			}
 		}

@@ -737,8 +737,6 @@ int nbdx_handler_on_req(void *prv_session_data,
 	char			*buffer = req->in.header.iov_base;
 	char			*cmd_data;
 	struct nbdx_command	cmd;
-	int			disconnect = 0;
-
 
 	if (buffer == NULL) {
 		nbdx_reject_request(prv_session_data,
@@ -793,18 +791,15 @@ int nbdx_handler_on_req(void *prv_session_data,
 				    req);
 		break;
 	default:
-		/*
 		printf("unknown command %d len:%d, sn:%"PRIu64"\n",
 		       cmd.command, cmd.data_len, req->sn);
-		xio_disconnect(conn);
-		*/
 		nbdx_reject_request(prv_session_data,
 				    prv_portal_data,
 				    &cmd, cmd_data,
 				    req);
-		break;
+		return 1;
 	};
-	return disconnect;
+	return 0;
 }
 
 /*---------------------------------------------------------------------------*/
