@@ -174,12 +174,12 @@ void nbdx_handler_free_portal_data(void *prv_portal_data)
 	struct nbdx_bs      *bs_dev, *tmp;
 
 	TAILQ_FOREACH_SAFE(bs_dev, &pd->dev_list, list, tmp) {
+		TAILQ_REMOVE(&pd->dev_list, bs_dev, list);
 		if (!bs_dev->is_null) {
 			close(bs_dev->fd);
 			nbdx_bs_close(bs_dev);
 			nbdx_bs_exit(bs_dev);
 		}
-		TAILQ_REMOVE(&pd->dev_list, bs_dev, list);
 	}
 
 }
