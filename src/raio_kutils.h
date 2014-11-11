@@ -40,6 +40,7 @@
 #define RAIO_KUTILS_H
 
 #include <linux/blkdev.h>
+#include <linux/scatterlist.h>
 #include "libxio.h"
 
 #define SUBMIT_BLOCK_SIZE				\
@@ -136,7 +137,10 @@ struct raio_iocb {
 			    LAST_IN_BATCH +	    \
 			    sizeof(struct raio_command))
 
+#define MAX_SGL_LEN 128
+
 struct raio_io_u {
+	struct scatterlist  sgl[MAX_SGL_LEN];
 	struct raio_iocb		iocb;
 	struct request		       *breq;
 	struct xio_msg			req;

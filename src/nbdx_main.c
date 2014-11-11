@@ -58,9 +58,11 @@ static void msg_reset(struct xio_msg *msg)
 {
 	msg->in.header.iov_base = NULL;
 	msg->in.header.iov_len = 0;
-	msg->in.data_iovlen = 0;
-	msg->out.data_iovlen = 0;
+	msg->in.sgl_type = XIO_SGL_TYPE_SCATTERLIST;
+	memset(&msg->in.data_tbl, 0, sizeof(msg->in.data_tbl));
 	msg->out.header.iov_len = 0;
+	msg->out.sgl_type = XIO_SGL_TYPE_SCATTERLIST;
+	memset(&msg->out.data_tbl, 0, sizeof(msg->out.data_tbl));
 	msg->next = NULL;
 }
 
@@ -115,19 +117,27 @@ int nbdx_transfer(struct nbdx_file *xdev, char *buffer, unsigned long start,
 		 __func__, __LINE__, start, len, io_u->iocb.raio_lio_opcode);
 
 	if (io_u->iocb.raio_lio_opcode == RAIO_CMD_PWRITE) {
-		io_u->req.in.data_iovlen  = 0;
-		retval = nbdx_rq_map_iov(req, &io_u->req.out,
-					 &io_u->iocb.u.c.nbytes);
+		io_u->req.out.data_tbl.sgl = io_u->sgl;
+		/*
+		 * TODO: no need to duplicate orig_nents for each IO.
+		 * Need to fix in Accelio request validation
+		 */
+		io_u->req.out.data_tbl.orig_nents = MAX_SGL_LEN;
+		retval = nbdx_rq_map_sg(req, &io_u->req.out, &io_u->iocb.u.c.nbytes);
 		if (retval) {
-			pr_err("failed to map io vec\n");
+			pr_err("failed to map sg\n");
 			goto err;
 		}
 	} else {
-		io_u->req.out.data_iovlen = 0;
-		retval = nbdx_rq_map_iov(req, &io_u->req.in,
-					 &io_u->iocb.u.c.nbytes);
+		io_u->req.in.data_tbl.sgl = io_u->sgl;
+		/*
+		 * TODO: no need to duplicate orig_nents for each IO.
+		 * Need to fix in Accelio request validation
+		 */
+		io_u->req.in.data_tbl.orig_nents = MAX_SGL_LEN;
+		retval = nbdx_rq_map_sg(req, &io_u->req.in, &io_u->iocb.u.c.nbytes);
 		if (retval) {
-			pr_err("failed to map io vec\n");
+			pr_err("failed to map sg\n");
 			goto err;
 		}
 	}
@@ -385,8 +395,6 @@ static int nbdx_setup_remote_session(struct nbdx_session *nbdx_session,
 			   nbdx_conn->req.out.header.iov_base,
 			   &nbdx_conn->req.out.header.iov_len);
 
-	nbdx_conn->req.out.data_iovlen = 0;
-
 	retval = xio_send_request(nbdx_conn->conn, &nbdx_conn->req);
 	put_cpu();
 	if (retval) {
@@ -425,8 +433,6 @@ static int nbdx_destroy_remote_session(struct nbdx_session *nbdx_session)
 	msg_reset(&nbdx_conn->req);
 	pack_destroy_command(nbdx_conn->req.out.header.iov_base,
 			&nbdx_conn->req.out.header.iov_len);
-
-	nbdx_conn->req.out.data_iovlen = 0;
 
 	retval = xio_send_request(nbdx_conn->conn, &nbdx_conn->req);
 	put_cpu();
@@ -677,7 +683,6 @@ static int nbdx_connect_work(void *data)
 	memset(&nbdx_conn->req, 0, sizeof(nbdx_conn->req));
 	nbdx_conn->req.out.header.iov_base = kmalloc(MAX_MSG_LEN, GFP_KERNEL);
 	nbdx_conn->req.out.header.iov_len = MAX_MSG_LEN;
-	nbdx_conn->req.out.data_iovlen = 0;
 
 	init_waitqueue_head(&nbdx_conn->wq);
 	nbdx_conn->wq_flag = 0;
@@ -792,7 +797,7 @@ int nbdx_session_create(const char *portal)
 	/* client session attributes */
 	struct xio_session_attr attr = {
 		&nbdx_ses_ops, /* callbacks structure */
-		NULL,	  /* no need to pass the server private data */
+		NULL,     /* no need to pass the server private data */
 		0
 	};
 
@@ -892,12 +897,20 @@ void nbdx_session_destroy(struct nbdx_session *nbdx_session)
 
 static int __init nbdx_init_module(void)
 {
+	int size_iov = MAX_SGL_LEN;
+
 	if (nbdx_create_sysfs_files())
 		return 1;
 
 	pr_debug("nr_cpu_ids=%d, num_online_cpus=%d\n",
 		 nr_cpu_ids, num_online_cpus());
 	submit_queues = num_online_cpus();
+
+	/* set accelio max message vector used (default is 4) */
+	xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO,
+		    XIO_OPTNAME_MAX_IN_IOVLEN, &size_iov, sizeof(int));
+	xio_set_opt(NULL, XIO_OPTLEVEL_ACCELIO,
+		    XIO_OPTNAME_MAX_OUT_IOVLEN, &size_iov, sizeof(int));
 
 	nbdx_major = register_blkdev(0, "nbdx");
 	if (nbdx_major < 0)

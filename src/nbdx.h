@@ -149,7 +149,7 @@ int nbdx_create_portal_files(struct kobject *kobj);
 int nbdx_create_device_files(struct kobject *p_kobj,
                              const char *dev_name, struct kobject *kobj);
 void nbdx_destroy_kobj(struct kobject *kobj);
-int nbdx_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
+int nbdx_rq_map_sg(struct request *rq, struct xio_vmsg *vmsg,
 		    unsigned long long *len);
 int nbdx_register_block_device(struct nbdx_file *nbdx_file);
 void nbdx_unregister_block_device(struct nbdx_file *nbdx_file);

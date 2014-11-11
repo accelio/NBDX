@@ -38,27 +38,21 @@
 
 #include "nbdx.h"
 
-int nbdx_rq_map_iov(struct request *rq, struct xio_vmsg *vmsg,
+int nbdx_rq_map_sg(struct request *rq, struct xio_vmsg *vmsg,
 		    unsigned long long *len)
 {
-	struct bio_vec bvec;
-	struct req_iterator iter;
-	int i = 0;
-
-	if (XIO_MAX_IOV <= rq->bio->bi_vcnt) {
-		pr_err("unsupported io vec size\n");
+	if (vmsg->data_tbl.orig_nents < rq->nr_phys_segments) {
+		pr_err("unsupported sg table size\n");
 		return -ENOMEM;
 	}
 
-	*len = 0;
-	rq_for_each_segment(bvec, rq, iter) {
-		vmsg->data_iov[i].iov_base = page_address(bvec.bv_page) +
-					     bvec.bv_offset;
-		vmsg->data_iov[i].iov_len =  bvec.bv_len;
-		*len += vmsg->data_iov[i].iov_len;
-		i++;
+	vmsg->data_tbl.nents = blk_rq_map_sg(rq->q, rq, vmsg->data_tbl.sgl);
+	if (vmsg->data_tbl.nents <= 0) {
+		pr_err("mapped %d sg nents\n", vmsg->data_tbl.nents);
+		return -EINVAL;
 	}
-	vmsg->data_iovlen = i;
+
+	*len = blk_rq_bytes(rq);
 
 	return 0;
 }
@@ -251,6 +245,7 @@ void nbdx_destroy_queues(struct nbdx_file *xdev)
 int nbdx_register_block_device(struct nbdx_file *nbdx_file)
 {
 	sector_t size = nbdx_file->stbuf.st_size;
+	int page_size = PAGE_SIZE;
 
 	pr_debug("%s called\n", __func__);
 
@@ -283,6 +278,8 @@ int nbdx_register_block_device(struct nbdx_file *nbdx_file)
 	nbdx_file->disk->private_data = nbdx_file;
 	blk_queue_logical_block_size(nbdx_file->queue, NBDX_SECT_SIZE);
 	blk_queue_physical_block_size(nbdx_file->queue, NBDX_SECT_SIZE);
+	sector_div(page_size, NBDX_SECT_SIZE);
+	blk_queue_max_hw_sectors(nbdx_file->queue, page_size * MAX_SGL_LEN);
 	sector_div(size, NBDX_SECT_SIZE);
 	set_capacity(nbdx_file->disk, size);
 	sscanf(nbdx_file->dev_name, "%s", nbdx_file->disk->disk_name);
