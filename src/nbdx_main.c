@@ -874,6 +874,7 @@ err_destroy_portal:
 err_free_session:
 	nbdx_destroy_kobj(&nbdx_session->kobj);
 err_sysfs:
+	kfree(nbdx_session);
 	return ret;
 
 }
