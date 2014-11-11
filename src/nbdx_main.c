@@ -792,14 +792,8 @@ static int nbdx_create_conn(struct nbdx_session *nbdx_session, int cpu,
 int nbdx_session_create(const char *portal)
 {
 	struct nbdx_session *nbdx_session;
+	struct xio_session_params params;
 	int i, j, ret;
-
-	/* client session attributes */
-	struct xio_session_attr attr = {
-		&nbdx_ses_ops, /* callbacks structure */
-		NULL,     /* no need to pass the server private data */
-		0
-	};
 
 	nbdx_session = kzalloc(sizeof(*nbdx_session), GFP_KERNEL);
 	if (!nbdx_session) {
@@ -814,8 +808,13 @@ int nbdx_session_create(const char *portal)
 	}
 
 	strcpy(nbdx_session->portal, portal);
-	nbdx_session->session = xio_session_create(XIO_SESSION_CLIENT,
-		     &attr, nbdx_session->portal, 0, 0, nbdx_session);
+	/* client session params */
+	memset(&params, 0, sizeof(params));
+	params.type     = XIO_SESSION_CLIENT;
+	params.ses_ops      = &nbdx_ses_ops;
+	params.user_context = nbdx_session;
+	params.uri      = nbdx_session->portal;
+	nbdx_session->session = xio_session_create(&params);
 	if (!nbdx_session->session) {
 		pr_err("failed to create xio session\n");
 		ret = -ENOMEM;
