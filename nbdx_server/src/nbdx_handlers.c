@@ -92,7 +92,6 @@ struct nbdx_io_portal_data {
 	int				io_u_free_nr;
 	struct nbdx_io_u		*io_us_free;
 	struct xio_msg			rsp;
-	struct xio_msg			close_rsp;
 	struct msg_pool			*rsp_pool;
 	struct xio_context		*ctx;
 	char				rsp_hdr[512];
