@@ -485,10 +485,7 @@ static int nbdx_handle_destroy(void *prv_session_data,
 			       char *cmd_data,
 			       struct xio_msg *req)
 {
-	struct nbdx_io_session_data	*sd = prv_session_data;
 	struct nbdx_io_portal_data	*pd = prv_portal_data;
-	struct nbdx_io_portal_data	*cpd;
-	int				i, j;
 	int				retval = 0;
 
 	if (0 != cmd->data_len) {
@@ -496,22 +493,6 @@ static int nbdx_handle_destroy(void *prv_session_data,
 		errno = EINVAL;
 		printf("destroy request rejected\n");
 		goto reject;
-	}
-
-	for (i = 0; i < sd->portals_nr; i++) {
-		cpd = &sd->pd[i];
-		/* unregister each io_u in the free list */
-		for (j = 0; j < cpd->io_u_free_nr; j++) {
-			TAILQ_REMOVE(&cpd->io_u_free_list,
-					&cpd->io_us_free[j],
-					io_u_list);
-			msg_pool_put(cpd->rsp_pool, cpd->io_us_free[j].rsp);
-			cpd->io_us_free[j].buf = NULL;
-
-		}
-		cpd->io_u_free_nr = 0;
-		free(cpd->io_us_free);
-		msg_pool_delete(cpd->rsp_pool);
 	}
 
 reject:
@@ -727,6 +708,38 @@ static int nbdx_handle_submit_comp(void *prv_session_data,
 }
 
 /*---------------------------------------------------------------------------*/
+/* nbdx_handle_destroy_comp				                     */
+/*---------------------------------------------------------------------------*/
+static int nbdx_handle_destroy_comp(void *prv_session_data,
+				   void *prv_portal_data,
+				   struct xio_msg *rsp)
+{
+
+	struct nbdx_io_session_data	*sd = prv_session_data;
+	struct nbdx_io_portal_data	*cpd;
+	int				i, j;
+
+	for (i = 0; i < sd->portals_nr; i++) {
+		cpd = &sd->pd[i];
+		/* unregister each io_u in the free list */
+		for (j = 0; j < cpd->io_u_free_nr; j++) {
+			TAILQ_REMOVE(&cpd->io_u_free_list,
+					&cpd->io_us_free[j],
+					io_u_list);
+			msg_pool_put(cpd->rsp_pool, cpd->io_us_free[j].rsp);
+			cpd->io_us_free[j].buf = NULL;
+		}
+		cpd->io_u_free_nr = 0;
+		free(cpd->io_us_free);
+		cpd->io_us_free = NULL;
+		msg_pool_delete(cpd->rsp_pool);
+		cpd->rsp_pool = NULL;
+	}
+
+	return 0;
+}
+
+/*---------------------------------------------------------------------------*/
 /* nbdx_handler_on_req				                             */
 /*---------------------------------------------------------------------------*/
 int nbdx_handler_on_req(void *prv_session_data,
@@ -819,9 +832,11 @@ void nbdx_handler_on_rsp_comp(void *prv_session_data,
 					prv_portal_data,
 					rsp);
 		break;
+	case NBDX_CMD_IO_DESTROY:
+		nbdx_handle_destroy_comp(prv_session_data, prv_portal_data, rsp);
+		break;
 	case NBDX_CMD_CLOSE:
 	case NBDX_CMD_UNKNOWN:
-	case NBDX_CMD_IO_DESTROY:
 	case NBDX_CMD_OPEN:
 	case NBDX_CMD_FSTAT:
 	case NBDX_CMD_IO_SETUP:
