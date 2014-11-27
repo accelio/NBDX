@@ -307,7 +307,7 @@ static int nbdx_handle_close(void *prv_session_data,
 	/* close fd only once */
 	if (!bs_dev->is_null) {
 		retval = close(bs_dev->fd);
-		if (!retval)
+		if (retval)
 			goto reject;
 	}
 
@@ -322,7 +322,7 @@ static int nbdx_handle_close(void *prv_session_data,
 	}
 
 reject:
-	if (retval != 0) {
+	if (retval) {
 		struct nbdx_answer ans = { NBDX_CMD_CLOSE, 0, -1, errno };
 		pack_u32((uint32_t *)&ans.ret_errno,
 		pack_u32((uint32_t *)&ans.ret,
