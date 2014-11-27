@@ -39,9 +39,11 @@
 #include <stdio.h>
 #include <errno.h>
 #include <inttypes.h>
+#include <pthread.h>
 #include <sys/param.h>
 #include <sys/types.h>
 #include <sys/queue.h>
+#include <sys/eventfd.h>
 #include <ctype.h>
 #include <sys/ioctl.h>
 #include <linux/fs.h>
@@ -75,6 +77,17 @@
 /*---------------------------------------------------------------------------*/
 /* data structres				                             */
 /*---------------------------------------------------------------------------*/
+struct nbdx_control_work {
+	struct nbdx_io_session_data *sd;
+	struct nbdx_io_portal_data *pd;
+	struct nbdx_command cmd;
+	char *cmd_data;
+	struct xio_msg *req;
+	int (*handle_work) (void*, void*, struct nbdx_command*, char*, struct xio_msg*);
+
+	TAILQ_ENTRY(nbdx_control_work)		control_work_list;
+};
+
 struct nbdx_io_u {
 	struct nbdx_event		ev_data;
 	struct xio_msg			*rsp;
@@ -90,6 +103,10 @@ struct nbdx_io_portal_data {
 	int				iodepth;
 	int				io_nr;
 	int				io_u_free_nr;
+	int				evt_fd;
+	int				pad;
+	pthread_mutex_t			rsp_lock;
+	struct nbdx_control_work	control_work;
 	struct nbdx_io_u		*io_us_free;
 	struct xio_msg			rsp;
 	struct msg_pool			*rsp_pool;
@@ -102,9 +119,41 @@ struct nbdx_io_portal_data {
 struct nbdx_io_session_data {
 	int				portals_nr;
 	int				pad;
+	struct nbdx_server_data		*server_data;
 
 	struct nbdx_io_portal_data	*pd;
 };
+
+/*---------------------------------------------------------------------------*/
+/* nbdx_process_control                                   */
+/*---------------------------------------------------------------------------*/
+void nbdx_process_control(int fd, int events, void *data)
+{
+	struct nbdx_server_data	*server_data = data;
+	struct nbdx_control_work *work;
+	int			ret;
+	eventfd_t		val;
+
+	ret = eventfd_read(fd, &val);
+	if (ret < 0) {
+		printf("failed to read process control event: %d errno: %d\n", ret, errno);
+		return;
+	}
+	if (val != NBDX_CONTROL_EVENT) {
+		printf("unknown event received: %d\n", (int)val);
+		return;
+	}
+	pthread_mutex_lock(&server_data->l_lock);
+	work = TAILQ_FIRST(&server_data->control_work_queue_list);
+	if (!work) {
+		printf("control_work_queue_list is empty\n");
+		pthread_mutex_unlock(&server_data->l_lock);
+		return;
+	}
+	TAILQ_REMOVE(&server_data->control_work_queue_list, work, control_work_list);
+	pthread_mutex_unlock(&server_data->l_lock);
+	work->handle_work(work->sd, work->pd, &work->cmd, work->cmd_data, work->req);
+}
 
 /*---------------------------------------------------------------------------*/
 /* nbdx_lookup_bs_dev                                   */
@@ -122,13 +171,43 @@ struct nbdx_bs *nbdx_lookup_bs_dev(int fd, struct nbdx_io_portal_data *pd)
 }
 
 /*---------------------------------------------------------------------------*/
+/* nbdx_control_get_completions						     */
+/*---------------------------------------------------------------------------*/
+static void nbdx_control_get_completions(int fd, int events, void *data)
+{
+	struct nbdx_io_portal_data *pd = data;
+	int			ret;
+	eventfd_t		val;
+
+	ret = eventfd_read(fd, &val);
+	if (ret < 0) {
+		printf("failed to read control completions: %d errno: %d\n", ret, errno);
+		return;
+	}
+	switch (val) {
+		case NBDX_CMD_OPEN:
+		case NBDX_CMD_CLOSE:
+		case NBDX_CMD_FSTAT:
+		case NBDX_CMD_IO_SETUP:
+		case NBDX_CMD_IO_DESTROY:
+		case NBDX_CMD_UNKNOWN:
+			xio_send_response(&pd->rsp);
+			break;
+		default:
+			printf("unknown event %d \n", (int)val);
+			break;
+	};
+}
+
+/*---------------------------------------------------------------------------*/
 /* nbdx_handler_init_session_data				             */
 /*---------------------------------------------------------------------------*/
-void *nbdx_handler_init_session_data(int portals_nr)
+void *nbdx_handler_init_session_data(int portals_nr, void *server_data)
 {
 	struct nbdx_io_session_data *sd;
 	sd = calloc(1, sizeof(*sd));
 
+	sd->server_data = server_data;
 	sd->pd		= calloc(portals_nr, sizeof(*sd->pd));
 	sd->portals_nr	= portals_nr;
 
@@ -144,13 +223,33 @@ void *nbdx_handler_init_portal_data(void *prv_session_data,
 	struct nbdx_io_session_data *sd = prv_session_data;
 	struct nbdx_io_portal_data *pd = &sd->pd[portal_nr];
 
+	pd->evt_fd = eventfd(0, EFD_NONBLOCK);
+	if (pd->evt_fd < 0) {
+		printf("failed to create eventfd, %d\n", pd->evt_fd);
+		return NULL;
+	}
+	if (pthread_mutex_init(&pd->rsp_lock, NULL) != 0) {
+		printf("mutex init failed\n");
+		goto free_fd;
+	}
 	pd->ctx = ctx;
 	pd->rsp.out.header.iov_base = pd->rsp_hdr;
 	pd->rsp.out.header.iov_len  = sizeof(pd->rsp_hdr);
 	pd->ndevs = 0;
 	TAILQ_INIT(&pd->dev_list);
+	if (xio_context_add_ev_handler(pd->ctx, pd->evt_fd, XIO_POLLIN,
+								   nbdx_control_get_completions, pd)) {
+		printf("failed to add event handler to xio context\n");
+		goto free_mutex;
+	}
 
 	return pd;
+
+free_mutex:
+	pthread_mutex_destroy(&pd->rsp_lock);
+free_fd:
+	close(pd->evt_fd);
+	return NULL;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -180,7 +279,9 @@ void nbdx_handler_free_portal_data(void *prv_portal_data)
 			nbdx_bs_exit(bs_dev);
 		}
 	}
-
+	xio_context_del_ev_handler(pd->ctx, pd->evt_fd);
+	close(pd->evt_fd);
+	pthread_mutex_destroy(&pd->rsp_lock);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -200,7 +301,7 @@ static int nbdx_handle_open(void *prv_session_data,
 	int		fd;
 	int i, is_null = 0;
 
-
+	pthread_mutex_lock(&pd->rsp_lock);
 	overall_size = sizeof(fd);
 
 	pathname = unpack_u32(&flags,
@@ -225,7 +326,7 @@ static int nbdx_handle_open(void *prv_session_data,
 	}
 
 	for (i = 0; i < sd->portals_nr; i++) {
-		struct nbdx_bs *bs_dev;
+	    struct nbdx_bs *bs_dev;
 	    struct nbdx_io_portal_data  *cpd;
 
 	    cpd = &sd->pd[i];
@@ -237,12 +338,12 @@ static int nbdx_handle_open(void *prv_session_data,
 		    bs_dev->is_null = 0;
 	    }
 
-	   errno = -nbdx_bs_open(bs_dev, fd);
-	   if (errno)
-		   break;
+	    errno = -nbdx_bs_open(bs_dev, fd);
+	    if (errno)
+		    break;
 
-	  TAILQ_INSERT_TAIL(&cpd->dev_list, bs_dev, list);
-	  cpd->ndevs++;
+	    TAILQ_INSERT_TAIL(&cpd->dev_list, bs_dev, list);
+	    cpd->ndevs++;
 	}
 
 reject:
@@ -269,10 +370,10 @@ reject:
 
 	pd->rsp.out.header.iov_len = (sizeof(struct nbdx_answer) +
 				     overall_size);
-
 	pd->rsp.request = req;
+	pd->rsp.flags = XIO_MSG_FLAG_IMM_SEND_COMP;
 
-	xio_send_response(&pd->rsp);
+	eventfd_write(pd->evt_fd, NBDX_CMD_OPEN);
 
 	return 0;
 }
@@ -293,6 +394,7 @@ static int nbdx_handle_close(void *prv_session_data,
 	int				fd;
 	int				i, retval = 0;
 
+	pthread_mutex_lock(&pd->rsp_lock);
 	unpack_u32((uint32_t *)&fd,
 		    cmd_data);
 
@@ -310,7 +412,6 @@ static int nbdx_handle_close(void *prv_session_data,
 		if (retval)
 			goto reject;
 	}
-
 	for (i = 0; i < sd->portals_nr; i++) {
 		cpd = &sd->pd[i];
 		bs_dev = nbdx_lookup_bs_dev(fd, cpd);
@@ -341,8 +442,9 @@ reject:
 	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer);
 
 	pd->rsp.request = req;
+	pd->rsp.flags = XIO_MSG_FLAG_IMM_SEND_COMP;
 
-	xio_send_response(&pd->rsp);
+	eventfd_write(pd->evt_fd, NBDX_CMD_CLOSE);
 
 	return 0;
 }
@@ -361,6 +463,7 @@ static int nbdx_handle_fstat(void *prv_session_data,
 	int				retval = 0;
 	struct nbdx_bs          *bs_dev;
 
+	pthread_mutex_lock(&pd->rsp_lock);
 	unpack_u32((uint32_t *)&fd,
 		    cmd_data);
 
@@ -402,8 +505,9 @@ reject:
 				     STAT_BLOCK_SIZE;
 
 	pd->rsp.request = req;
+	pd->rsp.flags = XIO_MSG_FLAG_IMM_SEND_COMP;
 
-	xio_send_response(&pd->rsp);
+	eventfd_write(pd->evt_fd, NBDX_CMD_FSTAT);
 
 	return 0;
 }
@@ -423,7 +527,7 @@ static int nbdx_handle_setup(void *prv_session_data,
 	struct nbdx_io_portal_data	*pd = prv_portal_data;
 	struct nbdx_io_portal_data	*cpd;
 
-
+	pthread_mutex_lock(&pd->rsp_lock);
 	if (sizeof(int) != cmd->data_len) {
 		err = EINVAL;
 		printf("io setup request rejected\n");
@@ -470,8 +574,9 @@ reject:
 
 	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer);
 	pd->rsp.request = req;
+	pd->rsp.flags = XIO_MSG_FLAG_IMM_SEND_COMP;
 
-	xio_send_response(&pd->rsp);
+	eventfd_write(pd->evt_fd, NBDX_CMD_IO_SETUP);
 
 	return 0;
 }
@@ -488,6 +593,7 @@ static int nbdx_handle_destroy(void *prv_session_data,
 	struct nbdx_io_portal_data	*pd = prv_portal_data;
 	int				retval = 0;
 
+	pthread_mutex_lock(&pd->rsp_lock);
 	if (0 != cmd->data_len) {
 		retval = -1;
 		errno = EINVAL;
@@ -514,8 +620,9 @@ reject:
 
 	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer);
 	pd->rsp.request = req;
+	pd->rsp.flags = XIO_MSG_FLAG_IMM_SEND_COMP;
 
-	xio_send_response(&pd->rsp);
+	eventfd_write(pd->evt_fd, NBDX_CMD_IO_DESTROY);
 
 	return 0;
 }
@@ -532,6 +639,8 @@ int nbdx_reject_request(void *prv_session_data,
 	struct nbdx_io_portal_data	*pd = prv_portal_data;
 
 	struct nbdx_answer ans = { NBDX_CMD_UNKNOWN, 0, -1, errno };
+
+	pthread_mutex_lock(&pd->rsp_lock);
 	pack_u32((uint32_t *)&ans.ret_errno,
 	pack_u32((uint32_t *)&ans.ret,
 	pack_u32(&ans.data_len,
@@ -541,8 +650,9 @@ int nbdx_reject_request(void *prv_session_data,
 	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer);
 	pd->rsp.out.data_iov.nents = 0;
 	pd->rsp.request = req;
+	pd->rsp.flags = XIO_MSG_FLAG_IMM_SEND_COMP;
 
-	xio_send_response(&pd->rsp);
+	eventfd_write(pd->evt_fd, NBDX_CMD_UNKNOWN);
 
 	return 0;
 }
@@ -674,6 +784,7 @@ reject:
 	ans.ret		= -1;
 	ans.ret_errno	= retval;
 
+	pthread_mutex_lock(&pd->rsp_lock);
 	pack_u32((uint32_t *)&ans.ret_errno,
 	pack_u32((uint32_t *)&ans.ret,
 	pack_u32(&ans.data_len,
@@ -682,6 +793,8 @@ reject:
 
 	pd->rsp.out.header.iov_len = sizeof(struct nbdx_answer);
 	pd->rsp.request = req;
+	pd->rsp.flags = XIO_MSG_FLAG_IMM_SEND_COMP;
+	pd->rsp.user_context = NULL;
 
 	xio_send_response(&pd->rsp);
 
@@ -703,6 +816,10 @@ static int nbdx_handle_submit_comp(void *prv_session_data,
 		TAILQ_INSERT_TAIL(&pd->io_u_free_list, io_u, io_u_list);
 		pd->io_u_free_nr++;
 	}
+	else {
+		/* handling failed submit msg that was sent throw pd->rsp*/
+		pthread_mutex_unlock(&pd->rsp_lock);
+	}
 
 	return 0;
 }
@@ -716,6 +833,7 @@ static int nbdx_handle_destroy_comp(void *prv_session_data,
 {
 
 	struct nbdx_io_session_data	*sd = prv_session_data;
+	struct nbdx_io_portal_data  *pd = prv_portal_data;
 	struct nbdx_io_portal_data	*cpd;
 	int				i, j;
 
@@ -736,7 +854,20 @@ static int nbdx_handle_destroy_comp(void *prv_session_data,
 		cpd->rsp_pool = NULL;
 	}
 
+	pthread_mutex_unlock(&pd->rsp_lock);
 	return 0;
+}
+
+/*---------------------------------------------------------------------------*/
+/* nbdx_handle_comp                                     */
+/*---------------------------------------------------------------------------*/
+static int nbdx_handle_comp(void *prv_session_data, void *prv_portal_data,
+                  struct xio_msg *rsp)
+{
+   struct nbdx_io_portal_data *pd = prv_portal_data;
+
+   pthread_mutex_unlock(&pd->rsp_lock);
+   return 0;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -746,16 +877,17 @@ int nbdx_handler_on_req(void *prv_session_data,
 			 void *prv_portal_data,
 			 struct xio_msg *req)
 {
+	struct nbdx_io_session_data	*sd = prv_session_data;
+	struct nbdx_io_portal_data  *pd = prv_portal_data;
 	char			*buffer = req->in.header.iov_base;
-	char			*cmd_data;
-	struct nbdx_command	cmd;
+	char			*cmd_data = NULL;
+	struct nbdx_command	cmd = {0, 0};
+	int				retval = 0;
 
 	if (buffer == NULL) {
-		nbdx_reject_request(prv_session_data,
-				    prv_portal_data,
-				    &cmd, NULL,
-				    req);
-		return 1;
+		pd->control_work.handle_work = nbdx_reject_request;
+		retval = 1;
+		goto prepare_work;
 	}
 
 	buffer = (char *)unpack_u32((uint32_t *)&cmd.command,
@@ -771,47 +903,43 @@ int nbdx_handler_on_req(void *prv_session_data,
 				   req);
 		break;
 	case NBDX_CMD_OPEN:
-		nbdx_handle_open(prv_session_data,
-				 prv_portal_data,
-				 &cmd, cmd_data,
-				 req);
+		pd->control_work.handle_work = nbdx_handle_open;
 		break;
 	case NBDX_CMD_CLOSE:
-		nbdx_handle_close(prv_session_data,
-				  prv_portal_data,
-				  &cmd, cmd_data,
-				  req);
+		pd->control_work.handle_work = nbdx_handle_close;
 		break;
 	case NBDX_CMD_FSTAT:
-		nbdx_handle_fstat(prv_session_data,
-				  prv_portal_data,
-				  &cmd, cmd_data,
-				  req);
+		pd->control_work.handle_work = nbdx_handle_fstat;
 		break;
 	case NBDX_CMD_IO_SETUP:
 		/* Once per Session */
-		nbdx_handle_setup(prv_session_data,
-				  prv_portal_data,
-				  &cmd, cmd_data,
-				  req);
+		pd->control_work.handle_work = nbdx_handle_setup;
 		break;
 	case NBDX_CMD_IO_DESTROY:
 		/* Once per Session */
-		nbdx_handle_destroy(prv_session_data,
-				    prv_portal_data,
-				    &cmd, cmd_data,
-				    req);
+		pd->control_work.handle_work = nbdx_handle_destroy;
 		break;
 	default:
 		printf("unknown command %d len:%d, sn:%"PRIu64"\n",
 		       cmd.command, cmd.data_len, req->sn);
-		nbdx_reject_request(prv_session_data,
-				    prv_portal_data,
-				    &cmd, cmd_data,
-				    req);
-		return 1;
+		pd->control_work.handle_work = nbdx_reject_request;
+		retval = 1;
 	};
-	return 0;
+prepare_work:
+	if(cmd.command != NBDX_CMD_IO_SUBMIT) {
+		pd->control_work.sd = sd;
+		pd->control_work.pd = pd;
+		pd->control_work.cmd_data = cmd_data;
+		pd->control_work.cmd.command = cmd.command;
+		pd->control_work.cmd.data_len = cmd.data_len;
+		pd->control_work.req = req;
+		pthread_mutex_lock(&sd->server_data->l_lock);
+		TAILQ_INSERT_TAIL(&sd->server_data->control_work_queue_list,
+				&pd->control_work, control_work_list);
+		pthread_mutex_unlock(&sd->server_data->l_lock);
+		eventfd_write(sd->server_data->evt_fd, NBDX_CONTROL_EVENT);
+	}
+	return retval;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -840,6 +968,7 @@ void nbdx_handler_on_rsp_comp(void *prv_session_data,
 	case NBDX_CMD_OPEN:
 	case NBDX_CMD_FSTAT:
 	case NBDX_CMD_IO_SETUP:
+		nbdx_handle_comp(prv_session_data, prv_portal_data, rsp);
 		break;
 	default:
 		printf("unknown answer %d\n", cmd.command);

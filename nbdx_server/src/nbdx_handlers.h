@@ -40,10 +40,11 @@
 
 struct nbdx_command;
 
+
 /*---------------------------------------------------------------------------*/
 /* nbdx_handler_init_session_data				             */
 /*---------------------------------------------------------------------------*/
-void	*nbdx_handler_init_session_data(int portals_nr);
+void	*nbdx_handler_init_session_data(int portals_nr, void *server_data);
 
 /*---------------------------------------------------------------------------*/
 /* nbdx_handler_init_portal_data				             */
@@ -74,5 +75,10 @@ int	nbdx_handler_on_req(void *prv_session_data,
 void	nbdx_handler_on_rsp_comp(void *prv_session_data,
 				 void *prv_portal_data,
 				 struct xio_msg *rsp);
+
+/*---------------------------------------------------------------------------*/
+/* nbdx_process_control                                   */
+/*---------------------------------------------------------------------------*/
+void nbdx_process_control(int fd, int events, void *data);
 
 #endif

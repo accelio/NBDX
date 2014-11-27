@@ -37,6 +37,7 @@
  */
 #include <unistd.h>
 #include <pthread.h>
+#include <sys/eventfd.h>
 #include <stdio.h>
 #include <string.h>
 #include <inttypes.h>
@@ -294,14 +295,18 @@ static int on_new_session(struct xio_session *session,
 	struct portals_vec *portals;
 	struct nbdx_server_data *server_data = cb_user_context;
 	struct nbdx_session_data *ses_data;
-	int i;
+	int i, j;
 
 	portals = portals_get(server_data, req->uri, req->private_data);
 
 	/* alloc and  and initialize */
 	ses_data = calloc(1, sizeof(*ses_data));
 	ses_data->session = session;
-	ses_data->dd_data = nbdx_handler_init_session_data(MAX_THREADS);
+	ses_data->dd_data = nbdx_handler_init_session_data(MAX_THREADS, server_data);
+	if (!ses_data->dd_data) {
+		printf("failed to init session data\n");
+		goto free_ses_data;
+	}
 	for (i = 0; i < MAX_THREADS; i++) {
 		ses_data->portal_data[i].tdata = &server_data->tdata[i];
 		ses_data->portal_data[i].dd_data =
@@ -309,6 +314,10 @@ static int on_new_session(struct xio_session *session,
 				ses_data->dd_data,
 				i,
 				ses_data->portal_data[i].tdata->ctx);
+		if (!ses_data->portal_data[i].dd_data) {
+			printf("failed to init portal data\n");
+			goto free_portal_data;
+		}
 	}
 	SLIST_INSERT_HEAD(&server_data->ses_list, ses_data, srv_ses_list);
 
@@ -318,6 +327,16 @@ static int on_new_session(struct xio_session *session,
 	portals_free(portals);
 
 	return 0;
+
+free_portal_data:
+	for (j = 0; j < i; j++) {
+		nbdx_handler_free_portal_data(ses_data->portal_data[j].dd_data);
+		ses_data->portal_data[j].dd_data = NULL;
+	}
+	nbdx_handler_free_session_data(ses_data->dd_data);
+free_ses_data:
+	free(ses_data);
+	return 1;
 }
 
 /*---------------------------------------------------------------------------*/
@@ -376,6 +395,21 @@ int main(int argc, char *argv[])
 		goto cleanup;
 	}
 
+	TAILQ_INIT(&server_data.control_work_queue_list);
+	server_data.evt_fd = eventfd(0, EFD_NONBLOCK);
+	if (server_data.evt_fd < 0) {
+		printf("failed to create eventfd, %d\n", server_data.evt_fd);
+		goto cleanup;
+	}
+	if (xio_context_add_ev_handler(server_data.ctx, server_data.evt_fd,
+								   XIO_POLLIN, nbdx_process_control, &server_data)) {
+		printf("failed to add event handler to xio context\n");
+		goto free_fd;
+	}
+	if (pthread_mutex_init(&server_data.l_lock, NULL) != 0) {
+			printf("mutex init failed\n");
+			goto free_ev_handler;
+	}
 	/* spawn portals */
 	for (i = 0; i < MAX_THREADS; i++) {
 		server_data.tdata[i].server_data = &server_data;
@@ -399,6 +433,13 @@ int main(int argc, char *argv[])
 
 	/* free the server */
 	xio_unbind(server);
+	pthread_mutex_destroy(&server_data.l_lock);
+free_ev_handler:
+	/* delete event handler */
+	xio_context_del_ev_handler(server_data.ctx, server_data.evt_fd);
+free_fd:
+	/* close the event fd */
+	close(server_data.evt_fd);
 cleanup:
 	/* free the context */
 	xio_context_destroy(server_data.ctx);
