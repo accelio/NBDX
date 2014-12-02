@@ -43,13 +43,13 @@
 #include <sys/queue.h>
 #include "libxio.h"
 #include "nbdx_handlers.h"
+#include "libnbdx.h"
 #include <arpa/inet.h>
 
 
 /*---------------------------------------------------------------------------*/
 /* preprocessor macros							     */
 /*---------------------------------------------------------------------------*/
-#define MAX_THREADS		6
 #define SIMULATE_DESTROY	0
 #define MAX_SGL_LEN		128
 
@@ -67,40 +67,6 @@ struct portals_vec {
 	int				vec_len;
 	int				pad;
 	const char			*vec[MAX_THREADS];
-};
-
-struct nbdx_thread_data {
-	struct nbdx_server_data		*server_data;
-	char				portal[64];
-	int				affinity;
-	int				pad;
-	struct xio_msg			rsp;
-	struct xio_context		*ctx;
-};
-
-struct nbdx_portal_data  {
-	struct	nbdx_thread_data	*tdata;
-	void				*dd_data;
-};
-struct nbdx_server_data;
-
-struct nbdx_session_data {
-	struct	xio_session		*session;
-	void				*dd_data;
-	struct nbdx_portal_data		portal_data[MAX_THREADS];
-	SLIST_ENTRY(nbdx_session_data)	srv_ses_list;
-};
-
-/* server private data */
-struct nbdx_server_data {
-	struct xio_context		*ctx;
-	int				last_used;
-	int				last_reaped;
-
-	SLIST_HEAD(, nbdx_session_data)	ses_list;
-
-	pthread_t			thread_id[MAX_THREADS];
-	struct nbdx_thread_data		tdata[MAX_THREADS];
 };
 
 /*---------------------------------------------------------------------------*/

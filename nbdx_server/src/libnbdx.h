@@ -45,6 +45,10 @@ extern "C" {
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/queue.h>
+#include "libxio.h"
+
+#define MAX_THREADS		6
 
 /*---------------------------------------------------------------------------*/
 /* forward declarations	                                                     */
@@ -52,6 +56,8 @@ extern "C" {
 struct timespec;
 struct stat64;
 struct nbdx_iocb;
+struct nbdx_thread_data;
+struct nbdx_server_data;
 
 /*---------------------------------------------------------------------------*/
 /* typedefs								     */
@@ -65,6 +71,11 @@ typedef struct nbdx_mr *nbdx_mr_t;
 enum nbdx_iocb_cmd {
 	NBDX_CMD_PREAD		= 0,
 	NBDX_CMD_PWRITE		= 1,
+};
+
+/** events for nbdx server */
+enum nbdx_server_events {
+	NBDX_CONTROL_EVENT		= 20
 };
 
 /*---------------------------------------------------------------------------*/
@@ -96,6 +107,42 @@ struct nbdx_event {
 	unsigned long long	handle; /* release handle */
 	unsigned long		res;
 	unsigned long		res2;
+};
+
+struct nbdx_portal_data  {
+	struct	nbdx_thread_data	*tdata;
+	void				*dd_data;
+};
+
+struct nbdx_session_data {
+	struct	xio_session		*session;
+	void				*dd_data;
+	struct nbdx_portal_data		portal_data[MAX_THREADS];
+	SLIST_ENTRY(nbdx_session_data)	srv_ses_list;
+};
+
+struct nbdx_thread_data {
+	struct nbdx_server_data		*server_data;
+	char				portal[64];
+	int				affinity;
+	int				pad;
+	struct xio_msg			rsp;
+	struct xio_context		*ctx;
+};
+
+/* server private data */
+struct nbdx_server_data {
+	struct xio_context		*ctx;
+	int				evt_fd;
+	int				last_used;
+	int				last_reaped;
+	int				pad;
+	SLIST_HEAD(, nbdx_session_data)	ses_list;
+	pthread_mutex_t         l_lock;
+	TAILQ_HEAD(, nbdx_control_work)		control_work_queue_list;
+
+	pthread_t			thread_id[MAX_THREADS];
+	struct nbdx_thread_data		tdata[MAX_THREADS];
 };
 
 /**
