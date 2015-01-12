@@ -676,6 +676,7 @@ static void nbdx_destroy_session_devices(struct nbdx_session *nbdx_session)
 static int nbdx_connect_work(void *data)
 {
 	struct nbdx_connection *nbdx_conn = data;
+	struct xio_connection_params    cparams;
 
 	pr_info("%s: start connect work on cpu %d\n", __func__,
 		nbdx_conn->cpu_id);
@@ -695,8 +696,12 @@ static int nbdx_connect_work(void *data)
 	pr_info("cpu %d: context established ctx=%p\n",
 		nbdx_conn->cpu_id, nbdx_conn->ctx);
 
-	nbdx_conn->conn = xio_connect(nbdx_conn->nbdx_sess->session,
-				      nbdx_conn->ctx, 0, NULL, nbdx_conn);
+	memset(&cparams, 0, sizeof(cparams));
+	cparams.session = nbdx_conn->nbdx_sess->session;
+	cparams.ctx = nbdx_conn->ctx;
+	cparams.conn_idx = 0;
+	cparams.conn_user_context = nbdx_conn;
+	nbdx_conn->conn = xio_connect(&cparams);
 	if (!nbdx_conn->conn){
 		printk("connection open failed\n");
 		xio_context_destroy(nbdx_conn->ctx);
