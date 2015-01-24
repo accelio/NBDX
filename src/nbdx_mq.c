@@ -45,7 +45,7 @@ int nbdx_rq_map_sg(struct request *rq, struct xio_vmsg *vmsg,
 		pr_err("unsupported sg table size\n");
 		return -ENOMEM;
 	}
-
+	sg_init_table(vmsg->data_tbl.sgl, rq->nr_phys_segments);
 	vmsg->data_tbl.nents = blk_rq_map_sg(rq->q, rq, vmsg->data_tbl.sgl);
 	if (vmsg->data_tbl.nents <= 0) {
 		pr_err("mapped %d sg nents\n", vmsg->data_tbl.nents);
