@@ -673,6 +673,22 @@ static void nbdx_destroy_session_devices(struct nbdx_session *nbdx_session)
 	}
 }
 
+/**
+ * destroy nbdx_conn
+ */
+static void nbdx_destroy_conn(struct nbdx_connection *nbdx_conn)
+{
+	struct task_struct *task = nbdx_conn->conn_th;
+
+	nbdx_conn->nbdx_sess = NULL;
+	nbdx_conn->conn_th = NULL;
+	nbdx_conn->conn = NULL;
+	nbdx_conn->ctx = NULL;
+	/* release buffer for management messages */
+	kfree(nbdx_conn->req.out.header.iov_base);
+	kfree(nbdx_conn);
+}
+
 static int nbdx_connect_work(void *data)
 {
 	struct nbdx_connection *nbdx_conn = data;
@@ -713,28 +729,15 @@ static int nbdx_connect_work(void *data)
 	/* the default xio supplied main loop */
 	xio_context_run_loop(nbdx_conn->ctx);
 
+	xio_context_destroy(nbdx_conn->ctx);
+
 	/* complete when last loop was stopped */
 	if (atomic_dec_and_test(&nbdx_conn->nbdx_sess->destroy_conns_count))
 		complete(&nbdx_conn->nbdx_sess->destroy_conns_wait);
+	nbdx_destroy_conn(nbdx_conn);
 
 	do_exit(0);
 	return 0;
-}
-
-/**
- * destroy nbdx_conn before waking up ktread task
- */
-static void nbdx_destroy_conn(struct nbdx_connection *nbdx_conn)
-{
-	struct task_struct *task = nbdx_conn->conn_th;
-
-	nbdx_conn->nbdx_sess = NULL;
-	nbdx_conn->conn_th = NULL;
-	nbdx_conn->conn = NULL;
-	nbdx_conn->ctx = NULL;
-	/* release buffer for management messages */
-	kfree(nbdx_conn->req.out.header.iov_base);
-	kfree(nbdx_conn);
 }
 
 static void nbdx_destroy_session_connections(struct nbdx_session *nbdx_session)
@@ -752,19 +755,7 @@ static void nbdx_destroy_session_connections(struct nbdx_session *nbdx_session)
 
 	/* wait for all connections to be destroyed */
 	wait_for_completion(&nbdx_session->destroy_conns_wait);
-
-	for (i = 0; i < submit_queues; i++) {
-		nbdx_conn = nbdx_session->nbdx_conns[i];
-		/* TODO
-		 * need to destroy xio context after stopping event
-		 * loop in the specific kthread.
-		 * due to xio disconnect issue, the context isn't destroyed
-		 * at the bounded kthread
-		 * */
-		xio_context_destroy(nbdx_conn->ctx);
-		nbdx_destroy_conn(nbdx_conn);
-	}
-
+	/* release connections array */
 	kfree(nbdx_session->nbdx_conns);
 }
 
