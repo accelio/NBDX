@@ -66,8 +66,8 @@ static void msg_reset(struct xio_msg *msg)
 	msg->next = NULL;
 }
 
-static inline int nbdx_set_device_state(struct nbdx_file *xdev,
-					enum nbdx_dev_state state)
+inline int nbdx_set_device_state(struct nbdx_file *xdev,
+				 enum nbdx_dev_state state)
 {
 	int ret = 0;
 
@@ -180,22 +180,6 @@ struct nbdx_file *nbdx_file_find(struct nbdx_session *nbdx_session,
 		}
 	}
 	spin_unlock(&nbdx_session->devs_lock);
-
-	return ret;
-}
-
-struct nbdx_session *nbdx_session_find(struct list_head *s_data_list,
-                                       const char *host_name)
-{
-	struct nbdx_session *pos;
-	struct nbdx_session *ret = NULL;
-
-	list_for_each_entry(pos, s_data_list, list) {
-		if (!strcmp(pos->kobj.name, host_name)) {
-			ret = pos;
-			break;
-		}
-	}
 
 	return ret;
 }
@@ -571,45 +555,20 @@ static int nbdx_close_remote_device(struct nbdx_session *nbdx_session,
 }
 
 int nbdx_create_device(struct nbdx_session *nbdx_session,
-					   const char *xdev_name, struct kobject *p_kobj)
+					   const char *xdev_name, struct nbdx_file *nbdx_file)
 {
-	struct nbdx_file *nbdx_file;
 	int retval;
-
-	nbdx_file = kzalloc(sizeof(*nbdx_file), GFP_KERNEL);
-	if (!nbdx_file) {
-		printk("nbdx_file alloc failed\n");
-		return -ENOMEM;
-	}
 
 	sscanf(xdev_name, "%s", nbdx_file->file_name);
 	nbdx_file->index = nbdx_indexes++;
-	sprintf(nbdx_file->dev_name, "nbdx%d", nbdx_file->index);
 	nbdx_file->nr_queues = submit_queues;
 	nbdx_file->queue_depth = NBDX_QUEUE_DEPTH;
 	nbdx_file->nbdx_conns = nbdx_session->nbdx_conns;
 
-	spin_lock_init(&nbdx_file->state_lock);
-	retval = nbdx_set_device_state(nbdx_file, DEVICE_OPENNING);
-	if (retval) {
-		pr_err("device %s: Illegal state transition %s -> openning\n",
-		       nbdx_file->dev_name,
-		       nbdx_device_state_str(nbdx_file));
-		kfree(nbdx_file);
-		goto err;
-	}
-
-	retval = nbdx_create_device_files(p_kobj, nbdx_file->dev_name, &nbdx_file->kobj);
-	if (retval) {
-		pr_err("failed to create sysfs for device %s\n",
-		       nbdx_file->dev_name);
-		goto err;
-	}
-
 	retval = nbdx_setup_queues(nbdx_file);
 	if (retval) {
 		pr_err("%s: nbdx_setup_queues failed\n", __func__);
-		goto err_put;
+		goto err;
 	}
 
 	retval = nbdx_open_remote_device(nbdx_session, nbdx_file);
@@ -634,16 +593,10 @@ int nbdx_create_device(struct nbdx_session *nbdx_session,
 
 	nbdx_set_device_state(nbdx_file, DEVICE_RUNNING);
 
-	spin_lock(&nbdx_session->devs_lock);
-	list_add(&nbdx_file->list, &nbdx_session->devs_list);
-	spin_unlock(&nbdx_session->devs_lock);
-
 	return 0;
 
 err_queues:
 	nbdx_destroy_queues(nbdx_file);
-err_put:
-	nbdx_destroy_kobj(&nbdx_file->kobj);
 err:
 	return retval;
 }
@@ -654,9 +607,11 @@ void nbdx_destroy_device(struct nbdx_session *nbdx_session,
 	pr_debug("%s\n", __func__);
 
 	nbdx_set_device_state(nbdx_file, DEVICE_OFFLINE);
-	nbdx_unregister_block_device(nbdx_file);
-	nbdx_close_remote_device(nbdx_session, nbdx_file->fd);
-	nbdx_destroy_queues(nbdx_file);
+	if (nbdx_file->disk){
+		nbdx_unregister_block_device(nbdx_file);
+		nbdx_close_remote_device(nbdx_session, nbdx_file->fd);
+		nbdx_destroy_queues(nbdx_file);
+	}
 
 	spin_lock(&nbdx_session->devs_lock);
 	list_del(&nbdx_file->list);
@@ -669,7 +624,6 @@ static void nbdx_destroy_session_devices(struct nbdx_session *nbdx_session)
 
 	list_for_each_entry_safe(xdev, tmp, &nbdx_session->devs_list, list) {
 		nbdx_destroy_device(nbdx_session, xdev);
-		nbdx_destroy_kobj(&xdev->kobj);
 	}
 }
 
@@ -782,23 +736,10 @@ static int nbdx_create_conn(struct nbdx_session *nbdx_session, int cpu,
 	return 0;
 }
 
-int nbdx_session_create(const char *portal)
+int nbdx_session_create(const char *portal, struct nbdx_session *nbdx_session)
 {
-	struct nbdx_session *nbdx_session;
 	struct xio_session_params params;
 	int i, j, ret;
-
-	nbdx_session = kzalloc(sizeof(*nbdx_session), GFP_KERNEL);
-	if (!nbdx_session) {
-		pr_err("failed to allocate nbdx session\n");
-		return -ENOMEM;
-	}
-
-	ret = nbdx_create_portal_files(&nbdx_session->kobj);
-	if (ret) {
-		ret = -ENOMEM;
-		goto err_sysfs;
-	}
 
 	strcpy(nbdx_session->portal, portal);
 	/* client session params */
@@ -811,16 +752,8 @@ int nbdx_session_create(const char *portal)
 	if (!nbdx_session->session) {
 		pr_err("failed to create xio session\n");
 		ret = -ENOMEM;
-		goto err_free_session;
+		return ret;
 	}
-
-	INIT_LIST_HEAD(&nbdx_session->devs_list);
-	spin_lock_init(&nbdx_session->devs_lock);
-
-	mutex_lock(&g_lock);
-	list_add(&nbdx_session->list, &g_nbdx_sessions);
-	created_portals++;
-	mutex_unlock(&g_lock);
 
 	nbdx_session->nbdx_conns = kzalloc(submit_queues * sizeof(*nbdx_session->nbdx_conns),
 					  GFP_KERNEL);
@@ -867,10 +800,6 @@ err_destroy_conns:
 err_destroy_portal:
 	if (nbdx_session->session)
 		xio_session_destroy(nbdx_session->session);
-err_free_session:
-	nbdx_destroy_kobj(&nbdx_session->kobj);
-err_sysfs:
-	kfree(nbdx_session);
 	return ret;
 
 }
@@ -882,15 +811,17 @@ void nbdx_session_destroy(struct nbdx_session *nbdx_session)
 	mutex_unlock(&g_lock);
 
 	nbdx_destroy_session_devices(nbdx_session);
-	nbdx_destroy_remote_session(nbdx_session);
-	nbdx_destroy_session_connections(nbdx_session);
+	if (nbdx_session->session) {
+		nbdx_destroy_remote_session(nbdx_session);
+		nbdx_destroy_session_connections(nbdx_session);
+	}
 }
 
 static int __init nbdx_init_module(void)
 {
 	int size_iov = MAX_SGL_LEN;
 
-	if (nbdx_create_sysfs_files())
+	if (nbdx_create_configfs_files())
 		return 1;
 
 	pr_debug("nr_cpu_ids=%d, num_online_cpus=%d\n",
@@ -921,10 +852,9 @@ static void __exit nbdx_cleanup_module(void)
 
 	list_for_each_entry_safe(nbdx_session, tmp, &g_nbdx_sessions, list) {
 		nbdx_session_destroy(nbdx_session);
-		nbdx_destroy_kobj(&nbdx_session->kobj);
 	}
 
-	nbdx_destroy_sysfs_files();
+	nbdx_destroy_configfs_files();
 
 }
 

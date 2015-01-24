@@ -57,6 +57,7 @@
 #include <linux/wait.h>
 #include <linux/fcntl.h>
 #include <linux/cpumask.h>
+#include <linux/configfs.h>
 
 #include "libxio.h"
 #include "raio_kutils.h"
@@ -96,7 +97,7 @@ struct nbdx_session {
 	struct list_head	      list;
 	struct list_head	      devs_list; /* list of struct nbdx_file */
 	spinlock_t		      devs_lock;
-	struct kobject		     kobj;
+	struct config_group	      session_cg;
 	struct completion	      conns_wait;
 	atomic_t		      conns_count;
 	atomic_t		      destroy_conns_count;
@@ -122,7 +123,7 @@ struct nbdx_file {
 	int			     index; /* drive idx */
 	char			     dev_name[MAX_NBDX_DEV_NAME];
 	struct nbdx_connection	    **nbdx_conns;
-	struct kobject		    kobj;
+	struct config_group	     dev_cg;
 	spinlock_t		     state_lock;
 	enum nbdx_dev_state	     state;
 };
@@ -137,17 +138,13 @@ extern int nbdx_indexes;
 int nbdx_transfer(struct nbdx_file *xdev, char *buffer, unsigned long start,
 		  unsigned long len, int write, struct request *req,
 		  struct nbdx_queue *q);
-int nbdx_session_create(const char *portal);
-int nbdx_create_device(struct nbdx_session *blk_nbdx_session,
-		       const char *xdev_name, struct kobject *p_kobj);
+int nbdx_session_create(const char *portal, struct nbdx_session *nbdx_session);
+int nbdx_create_device(struct nbdx_session *nbdx_session,
+		       const char *xdev_name, struct nbdx_file *nbdx_file);
 void nbdx_destroy_device(struct nbdx_session *nbdx_session,
                          struct nbdx_file *nbdx_file);
-int nbdx_create_sysfs_files(void);
-void nbdx_destroy_sysfs_files(void);
-int nbdx_create_portal_files(struct kobject *kobj);
-int nbdx_create_device_files(struct kobject *p_kobj,
-                             const char *dev_name, struct kobject *kobj);
-void nbdx_destroy_kobj(struct kobject *kobj);
+int nbdx_create_configfs_files(void);
+void nbdx_destroy_configfs_files(void);
 int nbdx_rq_map_sg(struct request *rq, struct xio_vmsg *vmsg,
 		    unsigned long long *len);
 int nbdx_register_block_device(struct nbdx_file *nbdx_file);
@@ -162,6 +159,7 @@ struct nbdx_session *nbdx_session_find_by_portal(struct list_head *s_data_list,
 						 const char *portal);
 void nbdx_session_destroy(struct nbdx_session *nbdx_session);
 const char* nbdx_device_state_str(struct nbdx_file *dev);
+int nbdx_set_device_state(struct nbdx_file *dev, enum nbdx_dev_state state);
 
 #endif  /* NBDX_H */
 
