@@ -731,10 +731,15 @@ static int nbdx_connect_work(void *data)
 
 	xio_context_destroy(nbdx_conn->ctx);
 
-	/* complete when last loop was stopped */
-	if (atomic_dec_and_test(&nbdx_conn->nbdx_sess->destroy_conns_count))
-		complete(&nbdx_conn->nbdx_sess->destroy_conns_wait);
-	nbdx_destroy_conn(nbdx_conn);
+	/* check if this is the last loop that was stopped */
+	if (atomic_dec_and_test(&nbdx_conn->nbdx_sess->destroy_conns_count)) {
+		struct nbdx_session *nbdx_session = nbdx_conn->nbdx_sess;
+		nbdx_destroy_conn(nbdx_conn);
+		/* last connection will release connections array */
+		kfree(nbdx_session->nbdx_conns);
+	}
+	else
+		nbdx_destroy_conn(nbdx_conn);
 
 	do_exit(0);
 	return 0;
@@ -745,18 +750,10 @@ static void nbdx_destroy_session_connections(struct nbdx_session *nbdx_session)
 	struct nbdx_connection *nbdx_conn;
 	int i;
 
-	init_completion(&nbdx_session->destroy_conns_wait);
-	atomic_set(&nbdx_session->destroy_conns_count, submit_queues);
-
 	for (i = 0; i < submit_queues; i++) {
 		nbdx_conn = nbdx_session->nbdx_conns[i];
 		xio_disconnect(nbdx_conn->conn);
 	}
-
-	/* wait for all connections to be destroyed */
-	wait_for_completion(&nbdx_session->destroy_conns_wait);
-	/* release connections array */
-	kfree(nbdx_session->nbdx_conns);
 }
 
 static int nbdx_create_conn(struct nbdx_session *nbdx_session, int cpu,
@@ -842,12 +839,12 @@ int nbdx_session_create(const char *portal)
 		if (ret)
 			goto err_destroy_conns;
 	}
-
+	atomic_set(&nbdx_session->destroy_conns_count, submit_queues);
 	/* wait for all connections establishment to complete */
 	if (!wait_for_completion_interruptible_timeout(&nbdx_session->conns_wait,
 						       120 * HZ)) {
 		pr_err("connection establishment timeout expired\n");
-		goto err_destroy_conns;
+		return -EAGAIN;
 	}
 
 	ret = nbdx_setup_remote_session(nbdx_session,
@@ -855,7 +852,8 @@ int nbdx_session_create(const char *portal)
 	if (ret) {
 		pr_err("failed to setup remote session %s ret=%d\n",
 				nbdx_session->portal, ret);
-		goto err_destroy_conns;
+		nbdx_destroy_session_connections(nbdx_session);
+		return -EAGAIN;
 	}
 
 	return 0;
@@ -867,10 +865,8 @@ err_destroy_conns:
 	}
 	kfree(nbdx_session->nbdx_conns);
 err_destroy_portal:
-	mutex_lock(&g_lock);
-	list_del(&nbdx_session->list);
-	mutex_unlock(&g_lock);
-	xio_session_destroy(nbdx_session->session);
+	if (nbdx_session->session)
+		xio_session_destroy(nbdx_session->session);
 err_free_session:
 	nbdx_destroy_kobj(&nbdx_session->kobj);
 err_sysfs:

@@ -98,7 +98,6 @@ struct nbdx_session {
 	spinlock_t		      devs_lock;
 	struct kobject		     kobj;
 	struct completion	      conns_wait;
-	struct completion	      destroy_conns_wait;
 	atomic_t		      conns_count;
 	atomic_t		      destroy_conns_count;
 };
