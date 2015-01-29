@@ -49,9 +49,9 @@ transport services.
 
 	2. nbdx client steps:
 		$ modprobe nbdx
-		$ echo <server_ip:port> > /sys/nbdx/add_portal
-		$ echo <device_path> > /sys/nbdx/nbdxhost_0/add_device
+		$ nbdxadm -o create_host -i <host_id> -p <server_ip:port>
+		$ nbdxadm -o create_device -i <host_id> -d <device_id> -f <file_path>
 
 In this stage, after the login and initialize stages are finished,
-a nbdx type block device (/dev/nbdx0) is available and ready for data transfer.
+a nbdx type block device (/dev/nbdx<device_id>) is available and ready for data transfer.
 

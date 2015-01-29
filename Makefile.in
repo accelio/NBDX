@@ -15,6 +15,7 @@ DISTFILES = Makefile.in configure.ac configure install-sh \
 nbdxmoduledir = @kmoduledir@/nbdx
 nbdxmodule := nbdx.ko
 nbdxsrc := src
+nbdxadm := nbdxadm
 
 
 all: all-spec
@@ -23,10 +24,12 @@ install: all
 	$(mkdir_p) $(DESTDIR)$(nbdxmoduledir)
 	$(INSTALL) -m 644 $(nbdxsrc)/$(nbdxmodule) $(DESTDIR)$(nbdxmoduledir)/$(nbdxmodule)
 	-/sbin/depmod -a
+	-\cp $(nbdxadm)/nbdxadm /usr/local/bin/
 
 uninstall:
 	rm -f $(DESTDIR)$(nbdxmoduledir)/$(nbdxmodule)
 	-/sbin/depmod -a
+	-rm -f /usr/local/bin/nbdxadm
 
 clean:
 	$(MAKE) -C @kernelbuild@ SUBDIRS=`pwd` KBUILD_EXTRA_SYMBOLS=@XIOSYMS@ @KERNELMAKE_PARAMS@ clean
